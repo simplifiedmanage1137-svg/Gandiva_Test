@@ -100,7 +100,7 @@ async function getUserAndOrg() {
   return { user, orgId, roleNames };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await getUserAndOrg();
     if ("error" in ctx) return ctx.error;
@@ -114,19 +114,27 @@ export async function GET() {
       return NextResponse.json({ error: ADMIN_NOT_CONFIGURED_MESSAGE }, { status: 503 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const filterStart = searchParams.get("start_date");
+    const filterEnd   = searchParams.get("end_date");
+
     // ── Date ranges ────────────────────────────────────────────────────────
     const now = new Date();
     const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startTomorrow = addDays(startToday, 1);
 
-    const start30 = addDays(now, -30);
-    const start60 = addDays(now, -60);
+    // Use filter range when provided, otherwise default to last 30 days
+    const start30 = filterStart ? new Date(`${filterStart}T00:00:00`) : addDays(now, -30);
+    const end30   = filterEnd   ? new Date(`${filterEnd}T23:59:59`)   : now;
 
+    const start60 = addDays(start30, -(Math.round((end30.getTime() - start30.getTime()) / (1000 * 60 * 60 * 24))));
     const startPrev30 = start60;
-    const endPrev30 = start30;
+    const endPrev30   = start30;
 
-    const startTrend = addDays(startToday, -6);
-    const endTrend = addDays(startToday, 1);
+    // Trend window: use filter range for day buckets, capped at 30 days
+    const trendDays = Math.min(30, Math.round((end30.getTime() - start30.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    const startTrend = start30;
+    const endTrend   = addDays(startTrend, trendDays);
 
     const startNext7 = now;
     const endNext7 = addDays(now, 7);
@@ -188,10 +196,11 @@ export async function GET() {
 
     // ── Lead Trend (last 7 days) ────────────────────────────────────────
     const { data: trendLeads } = await makeLeadQuery("created_at, converted_at")
-      .gte("created_at", startTrend.toISOString());
+      .gte("created_at", startTrend.toISOString())
+      .lt("created_at", endTrend.toISOString());
 
     const dayBuckets = [];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < trendDays; i++) {
       const day = addDays(startTrend, i);
       const label = day.toLocaleDateString("en-US", { weekday: "short" });
       dayBuckets.push({ start: day, label, leads: 0, conversions: 0 });
@@ -224,7 +233,8 @@ export async function GET() {
     for (const v of statusOrder) statusCounts[v] = { count: 0, value: 0 };
 
     const { data: pipelineLeads } = await makeLeadQuery("status, budget")
-      .gte("created_at", start30.toISOString());
+      .gte("created_at", start30.toISOString())
+      .lte("created_at", end30.toISOString());
 
     for (const l of pipelineLeads ?? []) {
       const st = ((l as any).status as string | null) ?? "new";
@@ -243,7 +253,8 @@ export async function GET() {
 
     // ── Lead Source (pie chart) ─────────────────────────────────────────
     const { data: sourcesLeads } = await makeLeadQuery("lead_source")
-      .gte("created_at", start30.toISOString());
+      .gte("created_at", start30.toISOString())
+      .lte("created_at", end30.toISOString());
 
     const sourceCounts = new Map<string, number>();
     for (const l of sourcesLeads ?? []) {

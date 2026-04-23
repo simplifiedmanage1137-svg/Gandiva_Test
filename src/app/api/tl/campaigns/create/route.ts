@@ -90,8 +90,13 @@ export async function POST(request: Request) {
       );
     }
 
-    let clientNameStr =
-      client_name != null && typeof client_name === "string" ? client_name.trim() : "";
+   let clientNameStr = "";
+
+if (Array.isArray(client_name)) {
+  clientNameStr = client_name.find((v) => typeof v === "string" && v.trim())?.trim() || "";
+} else if (typeof client_name === "string") {
+  clientNameStr = client_name.trim();
+}
     let clientId: string | null = null;
 
     if (clientIdParam && typeof clientIdParam === "string" && clientIdParam.trim()) {

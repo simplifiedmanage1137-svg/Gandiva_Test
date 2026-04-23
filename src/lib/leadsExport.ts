@@ -171,7 +171,7 @@ export function downloadExcel(leads: Lead[], filename?: string): void {
   const data = leadsToSheetData(leads);
   const ws = XLSX.utils.aoa_to_sheet(data);
   const colWidths = CSV_COLUMNS.map((_, i) => {
-    const maxLen = Math.max(
+  const maxLen = Math.max(
       ...data.map((row) => String(row[i] ?? "").length),
       (CSV_COLUMNS[i]?.header ?? "").length,
       10

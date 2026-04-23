@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { Card, Typography } from "antd";
 import {
   AreaChart,
@@ -16,6 +17,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import type { MonthBucket, DayBucket } from "@/hooks/useDateFilter";
 
 const { Text } = Typography;
 
@@ -59,8 +61,37 @@ const campaignPerformanceSample: CampaignPerformancePoint[] = [
 
 type PieSlice = { name: string; value: number; color: string };
 
-export function TLLeadTrendChart({ data }: { data?: TLLeadTrendPoint[] }) {
-  const chartData = data && data.length > 0 ? data : leadTrendSample;
+export function TLLeadTrendChart({
+  data,
+  dayBuckets,
+  monthBuckets,
+}: {
+  data?: TLLeadTrendPoint[];
+  dayBuckets?: DayBucket[];
+  monthBuckets?: MonthBucket[];
+}) {
+  const chartData = useMemo(() => {
+    // Build a lookup from API response keyed by label
+    const apiByLabel: Record<string, TLLeadTrendPoint> = {};
+    (data ?? []).forEach((p) => { apiByLabel[p.date] = p; });
+
+    if (dayBuckets && dayBuckets.length > 0) {
+      return dayBuckets.map((b) => ({
+        date:      b.label,
+        leads:     apiByLabel[b.label]?.leads     ?? 0,
+        campaigns: apiByLabel[b.label]?.campaigns ?? 0,
+      }));
+    }
+    if (monthBuckets && monthBuckets.length > 0) {
+      return monthBuckets.map((b) => ({
+        date:      b.label,
+        leads:     apiByLabel[b.label]?.leads     ?? 0,
+        campaigns: apiByLabel[b.label]?.campaigns ?? 0,
+      }));
+    }
+    // Fallback: use raw API data or sample
+    return data && data.length > 0 ? data : leadTrendSample;
+  }, [data, dayBuckets, monthBuckets]);
 
   return (
     <Card

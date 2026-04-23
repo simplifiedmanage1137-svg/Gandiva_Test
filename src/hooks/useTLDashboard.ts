@@ -20,31 +20,40 @@ export type TLCampaignRow = {
   qualified_leads: number;
 };
 
-async function fetchTLStats(): Promise<TLStats> {
-  const res = await fetch("/api/tl/campaigns/stats", { credentials: "include" });
+async function fetchTLStats(startDate?: string, endDate?: string, granularity?: string): Promise<TLStats> {
+  const params = new URLSearchParams();
+  if (startDate)   params.set("start_date", startDate);
+  if (endDate)     params.set("end_date", endDate);
+  if (granularity) params.set("granularity", granularity);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`/api/tl/campaigns/stats${qs}`, { credentials: "include" });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to load stats");
   return data;
 }
 
-async function fetchTLCampaigns(): Promise<{ campaigns: TLCampaignRow[] }> {
-  const res = await fetch("/api/tl/campaigns", { credentials: "include" });
+async function fetchTLCampaigns(startDate?: string, endDate?: string): Promise<{ campaigns: TLCampaignRow[] }> {
+  const params = new URLSearchParams();
+  if (startDate) params.set("start_date", startDate);
+  if (endDate) params.set("end_date", endDate);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`/api/tl/campaigns${qs}`, { credentials: "include" });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to load campaigns");
   return data;
 }
 
-export function useTLDashboard(enabled: boolean) {
+export function useTLDashboard(enabled: boolean, startDate?: string, endDate?: string, granularity?: string) {
   const statsQuery = useQuery({
-    queryKey: ["tl", "dashboard", "stats"],
-    queryFn: fetchTLStats,
+    queryKey: ["tl", "dashboard", "stats", startDate, endDate, granularity],
+    queryFn: () => fetchTLStats(startDate, endDate, granularity),
     enabled,
     staleTime: 60 * 1000,
   });
 
   const campaignsQuery = useQuery({
-    queryKey: ["tl", "campaigns"],
-    queryFn: fetchTLCampaigns,
+    queryKey: ["tl", "campaigns", startDate, endDate],
+    queryFn: () => fetchTLCampaigns(startDate, endDate),
     enabled,
     staleTime: 60 * 1000,
   });

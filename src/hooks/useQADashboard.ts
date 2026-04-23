@@ -18,8 +18,12 @@ export type CampaignWithLeads = {
   leads: { qa_status: string | null; status?: string | null }[];
 };
 
-async function fetchQADashboard(): Promise<{ campaigns: CampaignWithLeads[] }> {
-  const res = await fetch("/api/qa/dashboard", { credentials: "include" });
+async function fetchQADashboard(startDate?: string, endDate?: string): Promise<{ campaigns: CampaignWithLeads[] }> {
+  const params = new URLSearchParams();
+  if (startDate) params.set("start_date", startDate);
+  if (endDate)   params.set("end_date", endDate);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`/api/qa/dashboard${qs}`, { credentials: "include" });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to load dashboard");
   return data;
@@ -60,10 +64,10 @@ function buildStats(campaigns: CampaignWithLeads[]): QaStats {
   };
 }
 
-export function useQADashboard(enabled: boolean) {
+export function useQADashboard(enabled: boolean, startDate?: string, endDate?: string) {
   const dashboardQuery = useQuery({
-    queryKey: ["qa", "dashboard"],
-    queryFn: fetchQADashboard,
+    queryKey: ["qa", "dashboard", startDate, endDate],
+    queryFn: () => fetchQADashboard(startDate, endDate),
     enabled,
     staleTime: 60 * 1000,
   });

@@ -29,6 +29,8 @@ import {
 } from "@ant-design/icons";
 import { useAuth } from "@/context/AuthContext";
 import { useTLDashboard } from "@/hooks/useTLDashboard";
+import { useDateFilter } from "@/hooks/useDateFilter";
+import DateFilter from "@/components/Dashboard/DateFilter";
 import {
   StatCardsRowSkeleton,
   TableSkeleton,
@@ -84,7 +86,8 @@ export default function TeamLeaderDashboardPage() {
   const [isOffline, setIsOffline] = useState(false);
 
   const enabled = Boolean(isInitialized && (hasRole("team_leader") || hasRole("tl")));
-  const { stats, campaigns, refetch } = useTLDashboard(enabled);
+  const { filterState, dateRange, setPreset, setCustomMonth, setCustomYear } = useDateFilter();
+  const { stats, campaigns, refetch } = useTLDashboard(enabled, dateRange.startDate, dateRange.endDate, dateRange.granularity);
 
   // Auth guard is handled by the layout (useRoleGuard). No redirect needed here.
 
@@ -196,7 +199,17 @@ export default function TeamLeaderDashboardPage() {
 
   return (
     <div style={{ padding: "0 4px" }}>
-      <DashboardGreeting />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <DashboardGreeting />
+        <DateFilter
+          filterState={filterState}
+          label={dateRange.label}
+          onPresetChange={setPreset}
+          onCustomMonthChange={setCustomMonth}
+          onCustomYearChange={setCustomYear}
+        />
+      </div>
+
 
       {isOffline && (
         <div style={{ marginBottom: 24 }}>
@@ -257,7 +270,11 @@ export default function TeamLeaderDashboardPage() {
 
       <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
         <Col xs={24} xl={8}>
-          <TLLeadTrendChart data={statsData?.leadTrend ?? []} />
+          <TLLeadTrendChart
+            data={statsData?.leadTrend ?? []}
+            dayBuckets={dateRange.granularity === "day" ? dateRange.dayBuckets : undefined}
+            monthBuckets={dateRange.granularity === "month" ? dateRange.monthBuckets : undefined}
+          />
         </Col>
         <Col xs={24} xl={8}>
           <TLCampaignPerformanceChart data={campaignPerformanceData} />

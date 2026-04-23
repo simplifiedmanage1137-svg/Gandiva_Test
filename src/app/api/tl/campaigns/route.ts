@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -23,7 +23,11 @@ export async function GET() {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
 
-    const { data: campaigns, error: campaignsError } = await supabase
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get("start_date");
+    const endDate = searchParams.get("end_date");
+
+    let campaignsQueryBuilder = supabase
       .from("campaigns")
       .select(`
         id, campaign_id, name, client_name, description, industry, geography, lead_type, status,
@@ -33,6 +37,11 @@ export async function GET() {
       `)
       .eq("organization_id", orgId)
       .order("created_at", { ascending: false });
+
+    if (startDate) campaignsQueryBuilder = campaignsQueryBuilder.gte("created_at", `${startDate}T00:00:00`);
+    if (endDate) campaignsQueryBuilder = campaignsQueryBuilder.lte("created_at", `${endDate}T23:59:59`);
+
+    const { data: campaigns, error: campaignsError } = await campaignsQueryBuilder;
 
     if (campaignsError) {
       return NextResponse.json({ error: campaignsError.message }, { status: 500 });
@@ -63,10 +72,15 @@ export async function GET() {
     const campaignIds = campaignsList.map((c) => c.id);
     const [leadsRes, assignmentsRes] = await Promise.all([
       campaignIds.length > 0
-        ? supabase
-            .from("leads")
-            .select("campaign_id, qa_status")
-            .in("campaign_id", campaignIds)
+        ? (() => {
+            let q = supabase
+              .from("leads")
+              .select("campaign_id, qa_status")
+              .in("campaign_id", campaignIds);
+            if (startDate) q = q.gte("created_at", `${startDate}T00:00:00`);
+            if (endDate) q = q.lte("created_at", `${endDate}T23:59:59`);
+            return q;
+          })()
         : { data: [] as { campaign_id: string; qa_status: string | null }[] },
       campaignIds.length > 0
         ? supabase

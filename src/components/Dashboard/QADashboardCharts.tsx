@@ -98,7 +98,10 @@ export function QAStatusPieChart({ data }: { data: PieSlice[] }) {
   );
 }
 
-export function QAReviewTrendChart() {
+type ReviewTrendPoint = { day: string; reviewed: number; pending: number };
+
+export function QAReviewTrendChart({ data }: { data?: ReviewTrendPoint[] }) {
+  const chartData = data && data.length > 0 ? data : reviewTrendSample;
   return (
     <Card
       title={<Text strong style={{ fontSize: 16 }}>Review Trend</Text>}
@@ -107,7 +110,7 @@ export function QAReviewTrendChart() {
       styles={{ body: { padding: "24px 24px 16px" } }}
     >
       <ResponsiveContainer width="100%" height={320}>
-        <AreaChart data={reviewTrendSample} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
+        <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
           <defs>
             <linearGradient id="colorQAReviewed" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#52c41a" stopOpacity={0.3} />

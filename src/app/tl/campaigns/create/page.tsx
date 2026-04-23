@@ -58,6 +58,7 @@ export default function TLCampaignCreatePage() {
   const [teamLeaders, setTeamLeaders] = useState<
     { id: string; full_name: string | null; email: string | null }[]
   >([]);
+  const [clients, setClients] = useState<string[]>([]); 
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [form] = Form.useForm();
 
@@ -86,13 +87,23 @@ export default function TLCampaignCreatePage() {
       .catch(() => message.warning("Could not load Team Leaders"));
   }, [isInitialized, hasRole]);
 
+  useEffect(() => {
+    if (!isInitialized) return;
+    fetch("/api/tl/clients", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        setClients(data.clients || []);
+      })
+      .catch(() => message.warning("Could not load clients"));
+  }, [isInitialized]);
+
   const cpl = Form.useWatch("cpl", form);
   const totalAllocation = Form.useWatch("total_allocation", form);
   const calculatedRevenue =
     cpl != null &&
-    totalAllocation != null &&
-    Number(cpl) >= 0 &&
-    Number(totalAllocation) >= 0
+      totalAllocation != null &&
+      Number(cpl) >= 0 &&
+      Number(totalAllocation) >= 0
       ? Number(cpl) * Number(totalAllocation)
       : null;
 
@@ -115,6 +126,7 @@ export default function TLCampaignCreatePage() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
+          client_name: values.client_name,
           name: values.name,
           lead_type: leadTypeValue,
           start_date: values.start_date?.format?.("YYYY-MM-DD") ?? null,
@@ -159,7 +171,7 @@ export default function TLCampaignCreatePage() {
         if (!uploadRes.ok) {
           message.warning(
             uploadData.error ||
-              "Campaign created but some files failed to upload."
+            "Campaign created but some files failed to upload."
           );
         } else if (uploadData.errors?.length) {
           message.warning(`Campaign created. ${uploadData.errors.join(" ")}`);
@@ -191,6 +203,23 @@ export default function TLCampaignCreatePage() {
         <Form form={form} layout="vertical" initialValues={{ status: "draft" }}>
           <Row gutter={24}>
             <Col xs={24} md={12} lg={8}>
+              <Form.Item
+  name="client_name"
+  label="Client Name"
+  rules={[{ required: true, message: "Client Name is required" }]}
+>
+ <Select
+  mode="tags"
+  showSearch
+  placeholder="Select or type client name"
+  allowClear
+  options={clients.map((c) => ({ value: c, label: c }))}
+  notFoundContent={clients.length === 0 ? "No clients found" : null}
+  filterOption={(input, option) =>
+    (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+  }
+/>
+</Form.Item>
               <Form.Item
                 name="name"
                 label="Campaign Name"
@@ -285,9 +314,9 @@ export default function TLCampaignCreatePage() {
                 >
                   {calculatedRevenue != null
                     ? `$${Number(calculatedRevenue).toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}`
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`
                     : "—"}
                 </div>
                 <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>

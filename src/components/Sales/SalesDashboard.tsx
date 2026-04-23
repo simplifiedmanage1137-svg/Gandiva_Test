@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, Row, Col, Typography, Table, Tag, Badge, Avatar, Checkbox, Spin } from "antd";
 import DashboardGreeting from "@/components/Dashboard/DashboardGreeting";
 import {
@@ -133,7 +133,7 @@ const statusColors: Record<string, string> = {
   "Bad timing": "default",
 };
 
-export default function SalesDashboard() {
+export default function SalesDashboard({ startDate, endDate, filterBar }: { startDate?: string; endDate?: string; filterBar?: React.ReactNode } = {}) {
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState<null | {
     stats: {
@@ -161,7 +161,11 @@ export default function SalesDashboard() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch("/api/sales/dashboard", { credentials: "include" });
+        const params = new URLSearchParams();
+        if (startDate) params.set("start_date", startDate);
+        if (endDate)   params.set("end_date", endDate);
+        const qs = params.toString() ? `?${params.toString()}` : "";
+        const res = await fetch(`/api/sales/dashboard${qs}`, { credentials: "include" });
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(j.error || "Failed to load dashboard");
 
@@ -185,7 +189,7 @@ export default function SalesDashboard() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [startDate, endDate]);
 
   if (loading) {
     return (
@@ -290,7 +294,10 @@ export default function SalesDashboard() {
 
   return (
     <div style={{ padding: "0 4px" }}>
-      <DashboardGreeting />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <DashboardGreeting />
+        {filterBar}
+      </div>
 
       <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
         {statsData.map((stat, index) => (

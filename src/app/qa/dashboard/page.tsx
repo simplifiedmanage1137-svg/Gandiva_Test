@@ -29,6 +29,8 @@ import {
 } from "@ant-design/icons";
 import { useAuth } from "@/context/AuthContext";
 import { useQADashboard } from "@/hooks/useQADashboard";
+import { useDateFilter } from "@/hooks/useDateFilter";
+import DateFilter from "@/components/Dashboard/DateFilter";
 import {
   StatCardsRowSkeleton,
   TableSkeleton,
@@ -78,7 +80,8 @@ export default function QADashboardPage() {
   const [isOffline, setIsOffline] = useState(false);
 
   const enabled = status === "authorized";
-  const { dashboard, stats, refetch } = useQADashboard(enabled);
+  const { filterState, dateRange, setPreset, setCustomMonth, setCustomYear } = useDateFilter();
+  const { dashboard, stats, refetch } = useQADashboard(enabled, dateRange.startDate, dateRange.endDate);
 
   useEffect(() => {
     if (dashboard.error) {
@@ -216,6 +219,33 @@ export default function QADashboardPage() {
     [campaigns]
   );
 
+  const reviewTrendData = useMemo(() => {
+    const allLeads = campaigns.flatMap((c) => c.leads ?? []);
+    if (dateRange.granularity === "day" && dateRange.dayBuckets.length > 0) {
+      const byDay: Record<string, { reviewed: number; pending: number }> = {};
+      dateRange.dayBuckets.forEach((b) => { byDay[b.key] = { reviewed: 0, pending: 0 }; });
+      allLeads.forEach((l) => {
+        const k = (l as { created_at?: string }).created_at?.slice(0, 10);
+        if (!k || !(k in byDay)) return;
+        const qa = String(l.qa_status ?? "").trim();
+        if (qa) byDay[k].reviewed++; else byDay[k].pending++;
+      });
+      return dateRange.dayBuckets.map((b) => ({ day: b.label, ...byDay[b.key] }));
+    }
+    if (dateRange.granularity === "month" && dateRange.monthBuckets.length > 0) {
+      const byMonth: Record<string, { reviewed: number; pending: number }> = {};
+      dateRange.monthBuckets.forEach((b) => { byMonth[b.key] = { reviewed: 0, pending: 0 }; });
+      allLeads.forEach((l) => {
+        const k = (l as { created_at?: string }).created_at?.slice(0, 7);
+        if (!k || !(k in byMonth)) return;
+        const qa = String(l.qa_status ?? "").trim();
+        if (qa) byMonth[k].reviewed++; else byMonth[k].pending++;
+      });
+      return dateRange.monthBuckets.map((b) => ({ day: b.label, ...byMonth[b.key] }));
+    }
+    return [];
+  }, [campaigns, dateRange]);
+
   if (status !== "authorized") {
     return null;
   }
@@ -225,7 +255,16 @@ export default function QADashboardPage() {
 
   return (
     <div style={{ padding: "0 4px", maxWidth: 1600, margin: "0 auto" }}>
-      <DashboardGreeting />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <DashboardGreeting />
+        <DateFilter
+          filterState={filterState}
+          label={dateRange.label}
+          onPresetChange={setPreset}
+          onCustomMonthChange={setCustomMonth}
+          onCustomYearChange={setCustomYear}
+        />
+      </div>
 
       {isOffline && (
         <div style={{ marginBottom: 24 }}>
@@ -289,7 +328,7 @@ export default function QADashboardPage() {
           <QAStatusPieChart data={qaStatusFromCampaigns} />
         </Col>
         <Col xs={24} xl={8}>
-          <QAReviewTrendChart />
+          <QAReviewTrendChart data={reviewTrendData} />
         </Col>
         <Col xs={24} xl={8}>
           <QACampaignReviewChart data={campaignReviewData} />

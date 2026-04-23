@@ -46,7 +46,7 @@ type LeadRow = {
   rectified_reason: string | null;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -65,6 +65,10 @@ export async function GET() {
     if (!orgId) {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
+
+    const { searchParams } = new URL(request.url);
+    const startDate = searchParams.get("start_date");
+    const endDate   = searchParams.get("end_date");
 
     const { data: campaigns, error: campaignsError } = await supabase
       .from("campaigns")
@@ -102,21 +106,29 @@ export async function GET() {
 
     const leadsSelectBase = "id, lead_id, name, company_name, phone, email, city, status, qa_status, followup_date, notes, assigned_agent_id, created_by, created_at, updated_at, campaign_id, job_title, job_function, job_level, direct_number, industry, company_number, employee_size, address, state, country, zip_code, founded_years, founded_years_link, revenue_range, revenue_link, contact_linkedin_url, company_linkedin_url, scored, appointment, lead_tagging, lead_disposition";
     const leadsSelectExtended = leadsSelectBase + ", salutation, first_name, last_name, domain, phone_number_link, department, job_title_link, tenurity, vv_status, email_status, ev_tool, see_all_employees, employee_size_link, company_website_link, sic_code, sic_code_link, naics_code, naics_code_link, ra_comment, special_comments, call_back, call_notes, primary_reason, secondary_reason, qa_comments, cq1, cq2, cq3, cq4, cq5, audit_date, qa_name, asset_title";
-    let { data: leadsData, error: leadsError } = await supabase
+    let leadsQuery = supabase
       .from("leads")
       .select(leadsSelectExtended + ", disqualification_reasons, disqualification_reason, rectified_reason")
       .in("campaign_id", campaignIds)
       .eq("lead_tagging", "Scored")
       .order("created_at", { ascending: false });
 
+    if (startDate) leadsQuery = leadsQuery.gte("created_at", `${startDate}T00:00:00`);
+    if (endDate)   leadsQuery = leadsQuery.lte("created_at", `${endDate}T23:59:59`);
+
+    let { data: leadsData, error: leadsError } = await leadsQuery;
+
     if (leadsError && (leadsError.message?.includes("column") || leadsError.message?.includes("disqualification"))) {
       leadsError = null;
-      const fallback = await supabase
+      let fallbackQ = supabase
         .from("leads")
         .select(leadsSelectBase + ", disqualification_reasons, disqualification_reason, rectified_reason")
         .in("campaign_id", campaignIds)
         .eq("lead_tagging", "Scored")
         .order("created_at", { ascending: false });
+      if (startDate) fallbackQ = fallbackQ.gte("created_at", `${startDate}T00:00:00`);
+      if (endDate)   fallbackQ = fallbackQ.lte("created_at", `${endDate}T23:59:59`);
+      const fallback = await fallbackQ;
       leadsData = fallback.data;
       leadsError = fallback.error;
     }

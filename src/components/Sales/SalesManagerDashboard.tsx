@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import React, { useMemo } from "react";
 import { Card, Row, Col, Typography, Table, Tag, Avatar, Progress } from "antd";
 import DashboardGreeting from "@/components/Dashboard/DashboardGreeting";
 import {
@@ -80,7 +80,7 @@ const cardStyle = {
   cursor: "pointer" as const,
 };
 
-export default function SalesManagerDashboard() {
+export default function SalesManagerDashboard({ filterBar, startDate, endDate }: { filterBar?: React.ReactNode; startDate?: string; endDate?: string } = {}) {
   const { profile } = useAuth();
 
   const statsCards = useMemo(
@@ -191,7 +191,10 @@ export default function SalesManagerDashboard() {
 
   return (
     <div style={{ padding: "0 4px" }}>
-      <DashboardGreeting />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <DashboardGreeting />
+        {filterBar}
+      </div>
 
       <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
         {statsCards.map((stat, index) => (
