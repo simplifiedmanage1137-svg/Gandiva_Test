@@ -978,7 +978,7 @@ function GenerateLhoButton({ form }: { form: ReturnType<typeof Form.useForm>[0] 
     (typeof companyName === "string" && companyName.trim().length > 0);
 
   const handleGenerate = async () => {
-    const v = form.getFieldsValue();
+    const v = form.getFieldsValue() as Record<string, any>;
     const str = (val: unknown) => (val != null ? String(val).trim() : "");
 
     const data = {
