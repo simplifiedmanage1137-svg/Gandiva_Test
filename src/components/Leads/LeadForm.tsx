@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Form, Input, Select, DatePicker, Row, Col, Collapse, Typography, Button, Spin, message } from "antd";
-import { PlusOutlined, PlayCircleOutlined, DeleteOutlined, UploadOutlined, FileOutlined } from "@ant-design/icons";
+import { PlusOutlined, PlayCircleOutlined, DeleteOutlined, UploadOutlined, FileOutlined, FilePdfOutlined } from "@ant-design/icons";
+import { generateLhoPdf } from "@/lib/generateLhoPdf";
 import {
   STATUS_OPTIONS,
   QA_STATUS_OPTIONS,
@@ -956,6 +957,121 @@ export function LeadForm({
       <Form.Item label="Notes" name="notes" style={{ marginTop: 24 }}>
         <Input.TextArea rows={3} placeholder="Notes, context, objections..." />
       </Form.Item>
+
+      <GenerateLhoButton form={form} />
     </Form>
+  );
+}
+
+// ── Generate LHO Button ───────────────────────────────────────────────────────
+
+function GenerateLhoButton({ form }: { form: ReturnType<typeof Form.useForm>[0] }) {
+  const [generating, setGenerating] = useState(false);
+
+  const firstName = Form.useWatch("first_name", form);
+  const lastName = Form.useWatch("last_name", form);
+  const companyName = Form.useWatch("company_name", form);
+
+  const hasMinFields =
+    (typeof firstName === "string" && firstName.trim().length > 0) ||
+    (typeof lastName === "string" && lastName.trim().length > 0) ||
+    (typeof companyName === "string" && companyName.trim().length > 0);
+
+  const handleGenerate = async () => {
+    const v = form.getFieldsValue();
+    const str = (val: unknown) => (val != null ? String(val).trim() : "");
+
+    const data = {
+      // Prospect
+      salutation: str(v.salutation),
+      firstName: str(v.first_name),
+      lastName: str(v.last_name),
+      email: str(v.email),
+      phone: str(v.phone),
+      directNumber: str(v.direct_number),
+      jobTitle: str(v.job_title),
+      jobLevel: str(v.job_level),
+      department: str(v.department),
+      jobFunction: str(v.job_function),
+      jobTitleLink: str(v.job_title_link),
+      contactLinkedIn: str(v.contact_linkedin_url),
+      // Company
+      companyName: str(v.company_name),
+      domain: str(v.domain),
+      companyNumber: str(v.company_number),
+      address: str(v.address),
+      city: str(v.city),
+      state: str(v.state),
+      country: str(v.country),
+      zipCode: str(v.zip_code),
+      employeeSize: str(v.employee_size),
+      seeAllEmployees: str(v.see_all_employees),
+      industry: str(v.industry),
+      employeeSizeLink: str(v.employee_size_link),
+      companyWebsite: str(v.company_website_link),
+      companyLinkedIn: str(v.company_linkedin_url),
+      revenueRange: str(v.revenue_range),
+      revenueLink: str(v.revenue_link),
+      sicCode: str(v.sic_code),
+      sicCodeLink: str(v.sic_code_link),
+      naicsCode: str(v.naics_code),
+      naicsCodeLink: str(v.naics_code_link),
+      foundedYears: str(v.founded_years),
+      foundedYearsLink: str(v.founded_years_link),
+      // Custom
+      callBack: str(v.call_back),
+      callNotes: str(v.call_notes),
+      cq1: str(v.cq1),
+      cq2: str(v.cq2),
+      cq3: str(v.cq3),
+      cq4: str(v.cq4),
+      cq5: str(v.cq5),
+      raComment: str(v.ra_comment),
+      specialComments: str(v.special_comments),
+      // Notes
+      notes: str(v.notes),
+    };
+
+    setGenerating(true);
+    try {
+      await generateLhoPdf(data);
+      message.success("LHO PDF downloaded successfully");
+    } catch (err) {
+      console.error("LHO generation error:", err);
+      message.error("Failed to generate LHO PDF");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 24,
+        paddingTop: 20,
+        borderTop: "1px dashed #f0f0f0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        gap: 12,
+      }}
+    >
+      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+        Generate a Lead Handover Sheet PDF from the current form data.
+      </Typography.Text>
+      <Button
+        icon={<FilePdfOutlined />}
+        loading={generating}
+        disabled={!hasMinFields}
+        onClick={handleGenerate}
+        style={
+          hasMinFields
+            ? { background: "#1b2530", borderColor: "#0ea5e9", color: "#0ea5e9" }
+            : undefined
+        }
+      >
+        Generate LHO
+      </Button>
+    </div>
   );
 }
