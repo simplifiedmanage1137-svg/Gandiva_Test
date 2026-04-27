@@ -35,7 +35,7 @@ import {
   InboxOutlined,
 } from "@ant-design/icons";
 import { useAuth } from "@/context/AuthContext";
-import { downloadCsv, downloadAgentExcel } from "@/lib/leadsExport";
+import { downloadAgentExcel } from "@/lib/leadsExport";
 import { LeadDrawerContent, LEAD_DRAWER_WIDTH, LEAD_DRAWER_BODY_STYLE } from "@/components/Leads/LeadDrawerContent";
 import { getLeadTableColumns } from "@/components/Leads/LeadTableColumns";
 import { buildLeadPayload, leadToFormValues } from "@/lib/leadPayload";
@@ -655,11 +655,11 @@ export default function AgentCampaignDetailPage() {
                 const toExport = filteredLeads.length > 0 ? filteredLeads : leads;
                 if (toExport.length === 0) message.warning("No leads to export");
                 else {
-                  downloadCsv(
+                  downloadAgentExcel(
                     toExport,
                     `leads-${
                       campaign?.name?.replace(/\s+/g, "-") ?? "export"
-                    }-${new Date().toISOString().slice(0, 10)}.csv`
+                    }-${new Date().toISOString().slice(0, 10)}.xlsx`
                   );
                   message.success(`Exported ${toExport.length} leads`);
                 }

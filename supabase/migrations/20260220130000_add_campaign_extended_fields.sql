@@ -60,7 +60,7 @@ BEGIN
       notes text,
       created_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
       created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now()
+      updated_at timestamptz NOT NULL DEFAULT now()   
     );
 
     CREATE INDEX idx_campaigns_organization_id ON public.campaigns(organization_id);

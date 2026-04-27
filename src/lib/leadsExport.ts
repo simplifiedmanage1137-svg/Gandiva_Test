@@ -168,16 +168,20 @@ function leadsToSheetData(leads: Lead[]): unknown[][] {
  * Download leads as an Excel file (.xlsx). Same columns as CSV including id
  * so that re-upload can match by id and update existing leads.
  */
+const EXCEL_HIDDEN_COLUMNS = new Set(["id", "campaign_id", "lead_id"]);
+
 export function downloadExcel(leads: Lead[], filename?: string): void {
   const data = leadsToSheetData(leads);
   const ws = XLSX.utils.aoa_to_sheet(data);
-  const colWidths = CSV_COLUMNS.map((_, i) => {
-  const maxLen = Math.max(
+  const colWidths = CSV_COLUMNS.map((col, i) => {
+    const maxLen = Math.max(
       ...data.map((row) => String(row[i] ?? "").length),
       (CSV_COLUMNS[i]?.header ?? "").length,
       10
     );
-    return { wch: Math.min(maxLen, 50) };
+    return EXCEL_HIDDEN_COLUMNS.has(String(col.key))
+      ? { wch: Math.min(maxLen, 50), hidden: true }
+      : { wch: Math.min(maxLen, 50) };
   });
   ws["!cols"] = colWidths;
   const wb = XLSX.utils.book_new();
