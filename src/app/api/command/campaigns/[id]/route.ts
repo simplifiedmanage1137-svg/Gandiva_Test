@@ -70,6 +70,23 @@ export async function GET(
     }
   }
 
+  const rawFiles = Array.isArray(campaignObj.campaign_files)
+    ? (campaignObj.campaign_files as Array<Record<string, unknown>>)
+    : [];
+  if (rawFiles.length > 0) {
+    const filesWithUrls = await Promise.all(
+      rawFiles.map(async (f) => {
+        const filePath = String(f.file_path ?? "");
+        if (!filePath) return { ...f, download_url: null };
+        const { data: signed } = await supabase.storage
+          .from("campaign-files")
+          .createSignedUrl(filePath, 3600);
+        return { ...f, download_url: signed?.signedUrl ?? null };
+      })
+    );
+    campaignObj.campaign_files = filesWithUrls;
+  }
+
   return NextResponse.json({ campaign: campaignObj });
 }
 
@@ -91,6 +108,7 @@ export async function PATCH(
 
   const body = await request.json() as Record<string, unknown>;
   const profile = await getProfile(supabase, user.id);
+  const admin = getAdminClientSafe();
 
   if (!isCommand && isClientViewer) {
     if (!profile?.client_id) {
@@ -106,6 +124,12 @@ export async function PATCH(
       .maybeSingle();
     if (ownErr || !row || (row as { client_id: string | null }).client_id !== profile.client_id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Admin API not configured. Set SUPABASE_SERVICE_ROLE_KEY in deployment environment." },
+        { status: 503 }
+      );
     }
   }
 
@@ -138,17 +162,20 @@ export async function PATCH(
     }
   }
 
-  const { data: campaign, error } = await supabase
+  const writeClient = isClientViewer && admin ? admin : supabase;
+
+  const { data: campaign, error } = await writeClient
     .from("campaigns")
     .update(updates as never)
     .eq("id", id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
 
   if (body.metrics) {
-    await upsertCampaignMetrics(supabase, id, body.metrics as Record<string, unknown>);
+    await upsertCampaignMetrics(writeClient, id, body.metrics as Record<string, unknown>);
   }
 
   if (
@@ -172,7 +199,7 @@ export async function PATCH(
       total_campaign_spend: (body.total_campaign_spend as number | null) ?? 0,
       updated_by: user.id,
     };
-    await upsertCampaignMetrics(supabase, id, {
+    await upsertCampaignMetrics(writeClient, id, {
       sponsor_name: (body.sponsor_name as string | null) ?? null,
       total_leads_allocated: (body.total_leads_allocated as number | null) ?? 0,
       total_campaign_spend: (body.total_campaign_spend as number | null) ?? 0,
@@ -183,7 +210,7 @@ export async function PATCH(
       lead_increment: (body.lead_increment as number | null) ?? 0,
       lead_replace: (body.lead_replace as number | null) ?? 0,
     });
-    await appendCampaignMetricsHistory(supabase, id, historyPayload);
+    await appendCampaignMetricsHistory(writeClient, id, historyPayload);
   }
 
   const rawLeads = Array.isArray(body.leads) ? (body.leads as Record<string, unknown>[]) : [];
@@ -200,7 +227,7 @@ export async function PATCH(
       createdBy: user.id,
     });
     if (leadPayloads.length > 0) {
-      const { error: insertLeadsError } = await supabase.from("leads").insert(leadPayloads as never);
+      const { error: insertLeadsError } = await writeClient.from("leads").insert(leadPayloads as never);
       if (insertLeadsError) {
         return NextResponse.json({ error: insertLeadsError.message }, { status: 500 });
       }

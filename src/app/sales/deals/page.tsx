@@ -847,7 +847,7 @@ export default function SalesDealsPage() {
       {/* Views */}
       {view === "List" ? (
         <Card style={{ borderRadius: 16, boxShadow: "0 2px 8px rgba(15,23,42,0.06)" }} styles={{ body: { padding: 0 } }}>
-          <Table columns={columns} dataSource={filteredDeals} loading={loading} rowKey="id" scroll={{ x: 1300, y: 520 }} pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} deals` }} size="middle" />
+          <Table columns={columns} dataSource={filteredDeals} loading={loading} rowKey="id" scroll={{ x: 1300, y: 520 }} pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} deals` }} size="middle" />
         </Card>
       ) : (
         <div style={{ position: "relative" }}>

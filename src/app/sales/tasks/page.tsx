@@ -689,7 +689,7 @@ export default function SalesTasksPage() {
             size="middle"
             scroll={{ x: 900 }}
             pagination={{
-              pageSize: 15,
+              defaultPageSize: 15,
               showSizeChanger: true,
               showTotal: (t) => `${t} tasks`,
               style: { padding: "12px 16px", margin: 0 },

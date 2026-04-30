@@ -227,7 +227,7 @@ export default function AgentMyLeadsPage() {
             rowKey="id"
             loading={loading}
             scroll={{ x: 2800 }}
-            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
             locale={{
               emptyText: leadSearch || dateRange?.[0] || dateRange?.[1]
                 ? "No leads match the filter."

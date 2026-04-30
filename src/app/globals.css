@@ -30,9 +30,20 @@ html, body {
   max-width: 100% !important;
 }
 
-/* Table: show all data in one line, no wrapping */
+/* Base table safety: prevent content overlap in any table cell */
+.ant-table-wrapper .ant-table-cell {
+  min-width: 0;
+  vertical-align: middle;
+}
+
+/* Table: show data in one line with safe clipping */
 .table-single-line .ant-table-cell {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.table-single-line .ant-table-cell > * {
+  min-width: 0;
 }
 
 /* Table text columns: prevent overlap with ellipsis */

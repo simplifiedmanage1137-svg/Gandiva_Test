@@ -56,6 +56,7 @@ import {
   MailOutlined,
   PhoneOutlined,
   DownloadOutlined,
+  FileOutlined,
   FlagOutlined,
   PlusOutlined,
   MinusOutlined,
@@ -67,6 +68,7 @@ import QAPanel from "./QAPanel";
 import LeadAuditPanel from "./LeadAuditPanel";
 import { useAuth } from "@/context/AuthContext";
 import { LEAD_TAGGING_OPTIONS } from "@/types/lead.types";
+import { getLeadTableColumns } from "@/components/Leads/LeadTableColumns";
 
 const { Text, Title, Paragraph } = Typography;
 const { RangePicker } = DatePicker;
@@ -190,15 +192,27 @@ type LeadPanelFilters = {
 
 interface LeadRow {
   id: string;
+  organization_id?: string;
+  campaign_id?: string;
   name: string | null;
   first_name?: string | null;
   last_name?: string | null;
   company_name: string | null;
   job_title?: string | null;
+  phone?: string | null;
+  city?: string | null;
   email: string | null;
   status: string;
   consent_status: string | null;
   channel: string | null;
+  lead_tagging?: string | null;
+  followup_date?: string | null;
+  notes?: string | null;
+  ingested_at?: string | null;
+  qualified_at?: string | null;
+  registered_at?: string | null;
+  dq_reason_code?: string | null;
+  delivery_status?: string | null;
   rep_id?: string | null;
   assigned_agent_id?: string | null;
   assigned_user?: {
@@ -219,6 +233,7 @@ interface CampaignDetail {
   name: string;
   campaign_id: string;
   status: string;
+  campaign_type?: string | null;
   /** Lead aggregate label (campaigns.lead_aggregated). */
   lead_aggregated?: string | null;
   client_name: string | null;
@@ -226,11 +241,19 @@ interface CampaignDetail {
   geography: string | null;
   lead_type: string | null;
   cpl: number | null;
+  revenue?: number | null;
   total_allocation: number | null;
   achieved: number | null;
   start_date: string | null;
   end_date: string | null;
   description: string | null;
+  campaign_files?: {
+    id: string;
+    file_name: string;
+    file_path: string;
+    created_at: string;
+    download_url?: string | null;
+  }[] | null;
   clients?: { company_name?: string | null }[] | { company_name?: string | null } | null;
   campaign_metrics?: {
     sponsor_name?: string | null;
@@ -259,6 +282,7 @@ interface CampaignDashboardProps {
   campaignId: string;
   /** Opens this tab on load (e.g. `alerts` from `?tab=alerts`). */
   initialTab?: string | null;
+  initialDeliveryStatus?: string | null;
 }
 
 interface CampaignMetricsHistoryRow {
@@ -389,6 +413,44 @@ function leadStatusTagColor(status: string): string {
   return "blue";
 }
 
+function renderDescriptionWithLinks(raw: string) {
+  const lines = raw
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l, idx, arr) => l.length > 0 || (idx > 0 && arr[idx - 1].length > 0));
+
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return lines.map((line, lineIdx) => {
+    const parts = line.split(urlRegex);
+    return (
+      <div key={`desc-line-${lineIdx}`} style={{ marginBottom: 6 }}>
+        {parts.map((part, partIdx) => {
+          if (!part) return null;
+          if (part.startsWith("http://") || part.startsWith("https://")) {
+            return (
+              <a
+                key={`desc-part-${lineIdx}-${partIdx}`}
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: "#1677ff",
+                  textDecoration: "underline",
+                  wordBreak: "break-all",
+                }}
+              >
+                {part}
+              </a>
+            );
+          }
+          return <span key={`desc-part-${lineIdx}-${partIdx}`}>{part}</span>;
+        })}
+      </div>
+    );
+  });
+}
+
 function ChannelSplitMiniBar({ email, tele }: { email: number; tele: number }) {
   const total = email + tele;
   if (total <= 0) {
@@ -455,6 +517,7 @@ function ChannelSplitMiniBar({ email, tele }: { email: number; tele: number }) {
 export default function CampaignDashboard({
   campaignId,
   initialTab,
+  initialDeliveryStatus,
 }: CampaignDashboardProps) {
   const { hasRole } = useAuth();
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null);
@@ -481,6 +544,7 @@ export default function CampaignDashboard({
   );
   const [selectedLeadKeys, setSelectedLeadKeys] = useState<Key[]>([]);
   const [allocationSaving, setAllocationSaving] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   /** Allocation snapshot when this campaign was first shown (for % trend vs initial). */
   const [allocationBaseline, setAllocationBaseline] = useState<number | null>(null);
 
@@ -497,8 +561,10 @@ export default function CampaignDashboard({
     if (t === "qa" && isClientViewer) return;
     const allowed = new Set([
       "overview",
+      "description",
       "channels",
       "leads",
+      "files",
       "compliance",
       "alerts",
       "history",
@@ -509,6 +575,9 @@ export default function CampaignDashboard({
 
   useEffect(() => {
     setAllocationBaseline(null);
+  }, [campaignId]);
+  useEffect(() => {
+    setDescriptionExpanded(false);
   }, [campaignId]);
 
   const fetchData = useCallback(async () => {
@@ -603,6 +672,9 @@ export default function CampaignDashboard({
       if (f.consentTypes.length > 0) sp.set("consent_type_in", f.consentTypes.join(","));
       if (f.riskOnly) sp.set("risk_active", "1");
       if (f.consentStatuses.length > 0) sp.set("consent_status_in", f.consentStatuses.join(","));
+      if (initialDeliveryStatus === "delivered" || initialDeliveryStatus === "not_delivered") {
+        sp.set("delivery_status", initialDeliveryStatus);
+      }
       const res = await fetch(`/api/command/leads?${sp.toString()}`);
       const data = (await res.json()) as { leads?: LeadRow[]; total?: number; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to load leads");
@@ -613,7 +685,15 @@ export default function CampaignDashboard({
     } finally {
       setLeadsLoading(false);
     }
-  }, [campaignId, leadPage, leadPageSize, leadSortField, leadSortOrder, leadPanelFilters]);
+  }, [
+    campaignId,
+    initialDeliveryStatus,
+    leadPage,
+    leadPageSize,
+    leadSortField,
+    leadSortOrder,
+    leadPanelFilters,
+  ]);
 
   const fetchCampaignReps = useCallback(async () => {
     try {
@@ -641,8 +721,11 @@ export default function CampaignDashboard({
     if (f.consentTypes.length > 0) sp.set("consent_type_in", f.consentTypes.join(","));
     if (f.riskOnly) sp.set("risk_active", "1");
     if (f.consentStatuses.length > 0) sp.set("consent_status_in", f.consentStatuses.join(","));
+    if (initialDeliveryStatus === "delivered" || initialDeliveryStatus === "not_delivered") {
+      sp.set("delivery_status", initialDeliveryStatus);
+    }
     window.open(`/api/command/leads?${sp.toString()}`, "_blank", "noopener,noreferrer");
-  }, [campaignId, leadPanelFilters, leadSortField, leadSortOrder]);
+  }, [campaignId, initialDeliveryStatus, leadPanelFilters, leadSortField, leadSortOrder]);
 
   const fetchMetricsHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -798,134 +881,83 @@ export default function CampaignDashboard({
   /** Remaining lead quota vs delivered: total allocation − total leads in scope. */
   const deficitLeadsKpi = allocationNow - totalLeadsKpi;
 
-  const leadColumns: ColumnsType<LeadRow> = [
-    {
-      title: "Name",
-      key: "name",
-      width: 160,
-      sorter: true,
-      sortOrder: leadSortField === "name" ? leadSortOrder : null,
-      render: (_, row) => (
-        <div style={{ fontWeight: 600, fontSize: 13 }}>{leadFullName(row)}</div>
-      ),
-    },
-    {
-      title: "Company",
-      dataIndex: "company_name",
-      key: "company_name",
-      width: 160,
-      sorter: true,
-      sortOrder: leadSortField === "company_name" ? leadSortOrder : null,
-      ellipsis: true,
-      render: (v: string | null) => v ?? "—",
-    },
-    {
-      title: "Title",
-      dataIndex: "job_title",
-      key: "job_title",
-      width: 130,
-      sorter: true,
-      sortOrder: leadSortField === "job_title" ? leadSortOrder : null,
-      ellipsis: true,
-      render: (v: string | null) => v ?? "—",
-    },
-    {
-      title: "Channel",
-      dataIndex: "channel",
-      key: "channel",
-      width: 120,
-      sorter: true,
-      sortOrder: leadSortField === "channel" ? leadSortOrder : null,
-      render: (ch: string | null) => {
-        const c = (ch ?? "email").toLowerCase();
-        const isTele = c === "telemarketing" || c === "tele";
-        return (
-          <Tag color={isTele ? "purple" : "blue"}>{isTele ? "Tele" : "Email"}</Tag>
-        );
-      },
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      key: "status",
-      width: 130,
-      sorter: true,
-      sortOrder: leadSortField === "status" ? leadSortOrder : null,
-      render: (s: string) => (
-        <Tag color={leadStatusTagColor(s)}>{String(s ?? "").replace(/_/g, " ")}</Tag>
-      ),
-    },
-    {
-      title: "Consent Status",
-      dataIndex: "consent_status",
-      key: "consent_status",
-      width: 130,
-      sorter: true,
-      sortOrder: leadSortField === "consent_status" ? leadSortOrder : null,
-      render: (cs: string | null) => {
-        const key = (cs ?? "pending").toLowerCase();
-        return (
-          <Tag
-            style={
-              key === "verified"
-                ? { background: CONSENT_COLORS.verified, color: "#fff", borderColor: CONSENT_COLORS.verified }
-                : key === "missing"
+  const leadColumns: ColumnsType<LeadRow> = (() => {
+    const misColumns = getLeadTableColumns({
+      showActions: false,
+      showDeliveryStatus: false,
+    }) as unknown as ColumnsType<LeadRow>;
+    return [
+      ...misColumns,
+      {
+        title: <span style={{ whiteSpace: "nowrap" }}>Consent Status</span>,
+        dataIndex: "consent_status",
+        key: "consent_status",
+        width: 150,
+        sorter: true,
+        sortOrder: leadSortField === "consent_status" ? leadSortOrder : null,
+        render: (cs: string | null) => {
+          const key = (cs ?? "pending").toLowerCase();
+          return (
+            <Tag
+              style={
+                key === "verified"
+                  ? { background: CONSENT_COLORS.verified, color: "#fff", borderColor: CONSENT_COLORS.verified }
+                  : key === "missing"
                   ? { background: CONSENT_COLORS.missing, color: "#fff", borderColor: CONSENT_COLORS.missing }
                   : key === "disputed"
-                    ? { background: CONSENT_COLORS.disputed, color: "#fff", borderColor: CONSENT_COLORS.disputed }
-                    : { background: CONSENT_COLORS.pending, color: "#262626", borderColor: CONSENT_COLORS.pending }
-            }
-          >
-            {key}
-          </Tag>
-        );
+                  ? { background: CONSENT_COLORS.disputed, color: "#fff", borderColor: CONSENT_COLORS.disputed }
+                  : { background: CONSENT_COLORS.pending, color: "#262626", borderColor: CONSENT_COLORS.pending }
+              }
+            >
+              {key}
+            </Tag>
+          );
+        },
       },
-    },
-    {
-      title: "Rep ID",
-      key: "assigned_agent_id",
-      width: 110,
-      sorter: true,
-      sortOrder: leadSortField === "assigned_agent_id" ? leadSortOrder : null,
-      render: (_, row) => (
-        <span style={{ fontSize: 12 }}>{leadRepDisplay(row)}</span>
-      ),
-    },
-    {
-      title: "Last Action",
-      dataIndex: "last_action",
-      key: "last_action",
-      width: 140,
-      ellipsis: true,
-      render: (v: string | null) => v ?? "—",
-    },
-    {
-      title: "Last Action Date",
-      dataIndex: "last_action_at",
-      key: "last_action_at",
-      width: 160,
-      render: (v: string | null) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "—"),
-    },
-    {
-      title: "Risk",
-      key: "risk",
-      width: 56,
-      align: "center",
-      render: (_, row) => {
-        const flags = (row.risk_flags as unknown[]) ?? [];
-        const has = Array.isArray(flags) && flags.length > 0;
-        const tip = riskFlagTooltip(row.risk_flags);
-        if (!has) {
-          return <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 16 }} />;
-        }
-        return (
-          <Tooltip title={tip || "Active risk flags"}>
-            <FlagOutlined style={{ color: "#ff4d4f", fontSize: 16 }} />
-          </Tooltip>
-        );
+      {
+        title: "Rep ID",
+        key: "assigned_agent_id",
+        width: 110,
+        sorter: true,
+        sortOrder: leadSortField === "assigned_agent_id" ? leadSortOrder : null,
+        render: (_, row) => <span style={{ fontSize: 12 }}>{leadRepDisplay(row)}</span>,
       },
-    },
-  ];
+      {
+        title: "Last Action",
+        dataIndex: "last_action",
+        key: "last_action",
+        width: 160,
+        ellipsis: true,
+        render: (v: string | null) => v ?? "—",
+      },
+      {
+        title: "Last Action Date",
+        dataIndex: "last_action_at",
+        key: "last_action_at",
+        width: 160,
+        render: (v: string | null) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "—"),
+      },
+      {
+        title: "Risk",
+        key: "risk",
+        width: 56,
+        align: "center",
+        render: (_, row) => {
+          const flags = (row.risk_flags as unknown[]) ?? [];
+          const has = Array.isArray(flags) && flags.length > 0;
+          const tip = riskFlagTooltip(row.risk_flags);
+          if (!has) {
+            return <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 16 }} />;
+          }
+          return (
+            <Tooltip title={tip || "Active risk flags"}>
+              <FlagOutlined style={{ color: "#ff4d4f", fontSize: 16 }} />
+            </Tooltip>
+          );
+        },
+      },
+    ];
+  })();
 
   const historyColumns: ColumnsType<CampaignMetricsHistoryRow> = [
     {
@@ -1000,6 +1032,43 @@ export default function CampaignDashboard({
           <Tag>None</Tag>
         );
       },
+    },
+  ];
+
+  const fileColumns: ColumnsType<NonNullable<CampaignDetail["campaign_files"]>[number]> = [
+    {
+      title: "File name",
+      dataIndex: "file_name",
+      key: "file_name",
+      ellipsis: true,
+      render: (name: string) => name || "—",
+    },
+    {
+      title: "Uploaded",
+      dataIndex: "created_at",
+      key: "created_at",
+      width: 170,
+      render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "—"),
+    },
+    {
+      title: "Action",
+      key: "action",
+      width: 130,
+      align: "right",
+      render: (_, row) =>
+        row.download_url ? (
+          <Button
+            type="link"
+            icon={<DownloadOutlined />}
+            href={row.download_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Download
+          </Button>
+        ) : (
+          <Text type="secondary">Unavailable</Text>
+        ),
     },
   ];
 
@@ -1388,6 +1457,52 @@ export default function CampaignDashboard({
             )}
           </Card>
         </div>
+      ),
+    },
+    {
+      key: "description",
+      label: (
+        <span>
+          <FileOutlined /> Description
+        </span>
+      ),
+      children: (
+        <Card size="small" bordered style={{ borderRadius: 10 }}>
+          {campaign.description?.trim() ? (
+            <>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  lineHeight: 1.6,
+                  whiteSpace: "normal",
+                  wordBreak: "break-word",
+                  overflowWrap: "anywhere",
+                  ...(descriptionExpanded
+                    ? {}
+                    : {
+                        display: "-webkit-box",
+                        WebkitLineClamp: 5,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }),
+                }}
+              >
+                {renderDescriptionWithLinks(campaign.description.trim())}
+              </div>
+              <Button
+                type="link"
+                size="small"
+                style={{ paddingLeft: 0, marginTop: 8, height: "auto" }}
+                onClick={() => setDescriptionExpanded((v) => !v)}
+              >
+                {descriptionExpanded ? "Show Less" : "Show More"}
+              </Button>
+            </>
+          ) : (
+            <Text type="secondary">No description provided for this campaign.</Text>
+          )}
+        </Card>
       ),
     },
     {
@@ -1780,6 +1895,26 @@ export default function CampaignDashboard({
       ),
     },
     {
+      key: "files",
+      label: (
+        <span>
+          <FileOutlined /> Files ({campaign.campaign_files?.length ?? 0})
+        </span>
+      ),
+      children: (
+        <Card size="small" bordered style={{ borderRadius: 10 }}>
+          <Table
+            rowKey="id"
+            columns={fileColumns}
+            dataSource={campaign.campaign_files ?? []}
+            size="small"
+            pagination={{ pageSize: 10, showTotal: (t) => `${t} file${t !== 1 ? "s" : ""}` }}
+            locale={{ emptyText: "No files uploaded for this campaign yet." }}
+          />
+        </Card>
+      ),
+    },
+    {
       key: "compliance",
       label: (
         <span>
@@ -2101,6 +2236,11 @@ export default function CampaignDashboard({
               <Title level={4} style={{ margin: 0 }}>
                 {campaign.name}
               </Title>
+              {campaign.campaign_id ? (
+                <Tag color="default" style={{ fontFamily: "monospace" }}>
+                  {campaign.campaign_id}
+                </Tag>
+              ) : null}
               <Tag
                 color={
                   campaign.status === "active" ? "green" :
@@ -2148,10 +2288,74 @@ export default function CampaignDashboard({
                       display: "block",
                     }}
                   >
+                    Client
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: 600, display: "block", marginTop: 4 }}>
+                    {campaign.client_name?.trim() || "—"}
+                  </Text>
+                </div>
+                <div style={{ minWidth: 120, maxWidth: 280 }}>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      display: "block",
+                    }}
+                  >
+                    Campaign type
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: 600, display: "block", marginTop: 4 }}>
+                    {campaign.campaign_type?.trim() || "—"}
+                  </Text>
+                </div>
+                <div style={{ minWidth: 120, maxWidth: 280 }}>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      display: "block",
+                    }}
+                  >
                     Aggregate name
                   </Text>
                   <Text style={{ fontSize: 14, fontWeight: 600, display: "block", marginTop: 4 }}>
                     {campaign.lead_aggregated?.trim() || "—"}
+                  </Text>
+                </div>
+                <div style={{ minWidth: 120, maxWidth: 280 }}>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      display: "block",
+                    }}
+                  >
+                    Lead type
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: 600, display: "block", marginTop: 4 }}>
+                    {campaign.lead_type?.trim() || "—"}
+                  </Text>
+                </div>
+                <div style={{ minWidth: 160, maxWidth: 320 }}>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      display: "block",
+                    }}
+                  >
+                    Industry / Geography
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: 600, display: "block", marginTop: 4 }}>
+                    {[campaign.industry, campaign.geography].filter(Boolean).join(" / ") || "—"}
                   </Text>
                 </div>
                 <div style={{ minWidth: 200, maxWidth: 360 }}>
@@ -2168,6 +2372,28 @@ export default function CampaignDashboard({
                   </Text>
                   <Text style={{ fontSize: 14, fontWeight: 600, display: "block", marginTop: 4 }}>
                     {formatCampaignDateRange(campaign.start_date, campaign.end_date)}
+                  </Text>
+                </div>
+                <div style={{ minWidth: 120, maxWidth: 240 }}>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.05em",
+                      textTransform: "uppercase",
+                      display: "block",
+                    }}
+                  >
+                    CPL / Revenue
+                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: 600, display: "block", marginTop: 4 }}>
+                    {(campaign.cpl ?? null) != null
+                      ? `$${Number(campaign.cpl).toLocaleString()}`
+                      : "—"}
+                    {" / "}
+                    {(campaign.revenue ?? null) != null
+                      ? `$${Number(campaign.revenue).toLocaleString()}`
+                      : "—"}
                   </Text>
                 </div>
               </Space>

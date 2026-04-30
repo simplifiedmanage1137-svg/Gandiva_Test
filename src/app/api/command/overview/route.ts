@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { hasCommandRole } from "@/lib/command/rules-engine";
 import { getProfile, getRoleNames } from "@/lib/command/db";
+import { getAdminClientSafe } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,46 @@ type MetricsHistoryRow = {
   created_at: string;
 };
 
+async function getClientViewerUserIdsForOrg(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string
+): Promise<string[]> {
+  const admin = getAdminClientSafe();
+  const lookupClient = admin ?? supabase;
+
+  const { data: roleRows, error: roleErr } = await lookupClient
+    .from("roles")
+    .select("id, name")
+    .eq("organization_id", organizationId);
+  if (roleErr) throw new Error(roleErr.message);
+
+  const clientViewerRoleIds = ((roleRows ?? []) as { id: string; name: string | null }[])
+    .filter((r) => (r.name ?? "").toLowerCase().trim().replace(/\s+/g, "_") === "client_viewer")
+    .map((r) => r.id);
+
+  if (clientViewerRoleIds.length === 0) return [];
+
+  const { data: links, error: linkErr } = await lookupClient
+    .from("user_roles")
+    .select("user_id")
+    .in("role_id", clientViewerRoleIds);
+  if (linkErr) throw new Error(linkErr.message);
+
+  const userIds = [
+    ...new Set(((links ?? []) as { user_id: string }[]).map((r) => r.user_id).filter(Boolean)),
+  ];
+  if (userIds.length === 0) return [];
+
+  const { data: usersRows, error: usersErr } = await lookupClient
+    .from("users")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .in("id", userIds);
+  if (usersErr) throw new Error(usersErr.message);
+
+  return ((usersRows ?? []) as { id: string }[]).map((u) => u.id);
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -63,7 +104,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         campaigns: [],
         selectedCampaignId: campaignIdParam ?? null,
-        kpis: { totalLeads: 0, qualified: 0, registrations: 0, attendees: 0 },
+        kpis: { totalCampaigns: 0, totalLeads: 0, qualified: 0, registrations: 0, attendees: 0 },
         metrics: {
           total_leads_allocated: 0,
           total_campaign_spend: 0,
@@ -80,6 +121,31 @@ export async function GET(request: NextRequest) {
       });
     }
     campaignsQuery = campaignsQuery.eq("client_id", profile.client_id);
+    const clientViewerUserIds = await getClientViewerUserIdsForOrg(
+      supabase,
+      profile.organization_id ?? ""
+    );
+    if (clientViewerUserIds.length === 0) {
+      return NextResponse.json({
+        campaigns: [],
+        selectedCampaignId: campaignIdParam ?? null,
+        kpis: { totalCampaigns: 0, totalLeads: 0, qualified: 0, registrations: 0, attendees: 0 },
+        metrics: {
+          total_leads_allocated: 0,
+          total_campaign_spend: 0,
+          total_leads_delivered: 0,
+          deficit_leads: 0,
+          lead_increment: 0,
+          lead_replace: 0,
+        },
+        funnel: { leads: 0, qa: 0, qualified: 0, registered: 0, attended: 0 },
+        bar: { registrations: 0, attendees: 0 },
+        channelSplit: [],
+        trendDaily: [],
+        performance: { deliveryRate: 0, deficitRate: 0, registrationRate: 0, attendanceRate: 0 },
+      });
+    }
+    campaignsQuery = campaignsQuery.in("created_by", clientViewerUserIds);
   }
 
   if (campaignIdParam) campaignsQuery = campaignsQuery.eq("id", campaignIdParam);
@@ -94,7 +160,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       campaigns: campaignRows,
       selectedCampaignId: campaignIdParam ?? null,
-      kpis: { totalLeads: 0, qualified: 0, registrations: 0, attendees: 0 },
+      kpis: { totalCampaigns: campaignRows.length, totalLeads: 0, qualified: 0, registrations: 0, attendees: 0 },
       metrics: {
         total_leads_allocated: 0,
         total_campaign_spend: 0,
@@ -251,6 +317,7 @@ export async function GET(request: NextRequest) {
     campaigns: campaignRows,
     selectedCampaignId: campaignIdParam ?? null,
     kpis: {
+      totalCampaigns: campaignRows.length,
       totalLeads,
       qualified,
       registrations,

@@ -41,6 +41,7 @@ export interface CommandCampaignRow {
   id: string;
   campaign_id: string;
   name: string;
+  created_by_name?: string | null;
   status: string;
   start_date: string | null;
   end_date: string | null;
@@ -132,6 +133,17 @@ export default function CampaignTable({ campaigns, loading }: CampaignTableProps
           {row.name}
         </Link>
       ),
+    },
+    {
+      title: "Created By",
+      dataIndex: "created_by_name",
+      key: "created_by_name",
+      width: 180,
+      ellipsis: true,
+      sorter: (a, b) => (a.created_by_name ?? "").localeCompare(b.created_by_name ?? ""),
+      onHeaderCell: headerCellProps(180),
+      onCell: () => ({ style: { minWidth: 180, whiteSpace: "nowrap" } }),
+      render: (name: string | null | undefined) => name || "—",
     },
     {
       title: "Status",
@@ -264,7 +276,7 @@ export default function CampaignTable({ campaigns, loading }: CampaignTableProps
       tableLayout="fixed"
       scroll={{ x: "max-content" }}
       pagination={{
-        pageSize: 25,
+        defaultPageSize: 25,
         showSizeChanger: true,
         pageSizeOptions: [10, 25, 50, 100],
         showTotal: (t) => `${t} campaigns`,

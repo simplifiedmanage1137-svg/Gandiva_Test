@@ -595,7 +595,7 @@ export default function SalesAccountsPage() {
             highlightId && record.id === highlightId ? "sales-account-row-highlight" : ""
           }
           pagination={{
-            pageSize: 10,
+            defaultPageSize: 10,
             showSizeChanger: true,
             showTotal: (t) => `Total ${t} accounts`,
           }}

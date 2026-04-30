@@ -20,7 +20,7 @@ const misMenuItems = [
   {
     key: "/mis/campaigns",
     icon: <AppstoreOutlined />,
-    label: "Campaign Management",
+    label: "Campaigns",
     href: "/mis/campaigns",
   },
   {
@@ -38,7 +38,7 @@ const misMenuItems = [
   {
     key: "/mis/reports",
     icon: <BarChartOutlined />,
-    label: "Reports & Analytics",
+    label: "Reports",
     href: "/mis/reports",
   },
 ];

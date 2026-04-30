@@ -223,7 +223,7 @@ export default function QACampaignsPage() {
             rowKey="id"
             dataSource={list}
             pagination={{
-              pageSize: 15,
+              defaultPageSize: 15,
               showSizeChanger: true,
               pageSizeOptions: ["10", "15", "25", "50"],
               showTotal: (t) => `${t} campaigns`,

@@ -440,8 +440,22 @@ export default function SalesCampaignDetailPage() {
           );
         };
         return (
-          <span className="lead-id-cell" style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{id}</span>
+          <span
+            className="lead-id-cell"
+            style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", minWidth: 0 }}
+          >
+            <span
+              style={{
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                display: "block",
+              }}
+            >
+              {id}
+            </span>
             <Button
               type="text"
               size="small"
@@ -459,7 +473,18 @@ export default function SalesCampaignDetailPage() {
     { title: "Company", dataIndex: "company_name", key: "company_name", width: 140, ellipsis: true, render: (v: string | null) => v || "—" },
     { title: "Phone", dataIndex: "phone", key: "phone", width: 120, render: (v: string | null) => <span className="lead-phone-cell" data-no-dialer="true">{v || "—"}</span> },
     { title: "Email", dataIndex: "email", key: "email", width: 160, ellipsis: true, render: (v: string | null) => v || "—" },
-    { title: "City", dataIndex: "city", key: "city", width: 100, render: (v: string | null) => v || "—" },
+    {
+      title: "City",
+      dataIndex: "city",
+      key: "city",
+      width: 100,
+      ellipsis: true,
+      render: (v: string | null) => (
+        <span className="table-text-ellipsis" title={v || "—"}>
+          {v || "—"}
+        </span>
+      ),
+    },
     {
       title: "Status",
       dataIndex: "status",
@@ -808,7 +833,7 @@ export default function SalesCampaignDetailPage() {
           dataSource={leads}
           rowKey="id"
           scroll={{ x: 1500 }}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
           locale={{ emptyText: "No leads yet" }}
           size="middle"
         />

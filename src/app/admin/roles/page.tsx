@@ -307,7 +307,7 @@ export default function AdminRolesPage() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} roles` }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} roles` }}
           locale={{ emptyText: error || "No roles yet. Create default roles or add one manually." }}
         />
       </div>

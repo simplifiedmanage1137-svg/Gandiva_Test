@@ -11,12 +11,23 @@ import {
   Table,
   Button,
   Drawer,
+  Input,
   Tag,
   Typography,
   Spin,
   message,
+  Modal,
+  Popconfirm,
+  Space,
 } from "antd";
-import { UserOutlined, TeamOutlined, FundProjectionScreenOutlined, PlusOutlined } from "@ant-design/icons";
+import {
+  UserOutlined,
+  TeamOutlined,
+  FundProjectionScreenOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+} from "@ant-design/icons";
 import { useAuth } from "@/context/AuthContext";
 import { AddClientForm } from "@/components/Sales/AddClientForm";
 import { Form } from "antd";
@@ -47,12 +58,17 @@ type ClientRow = {
 export default function SalesClientsPage() {
   const router = useRouter();
   const { hasRole, isInitialized } = useAuth();
-  const hasSalesAccess =
-    hasRole("sales") || hasRole("sales_manager") || hasRole("admin");
+  const hasSalesAccess = hasRole("sales_manager");
+  const canManageClients = hasRole("sales_manager");
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState<ClientRow | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingClientId, setDeletingClientId] = useState<string | null>(null);
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -86,6 +102,79 @@ export default function SalesClientsPage() {
   const closeDrawer = () => {
     setDrawerOpen(false);
     form.resetFields();
+  };
+
+  const openEditModal = (record: ClientRow) => {
+    setEditingClient(record);
+    editForm.setFieldsValue({
+      company_name: record.company_name,
+      company_website: record.company_website,
+      industry_type: record.industry_type,
+      company_size: record.company_size,
+      year_established: record.year_established,
+      company_address: record.company_address,
+      city: record.city,
+      state: record.state,
+      country: record.country,
+      contact_person: record.contact_person,
+      contact_full_name: record.contact_full_name,
+      contact_designation: record.contact_designation,
+      contact_work_email: record.contact_work_email,
+      contact_mobile: record.contact_mobile,
+      contact_linkedin: record.contact_linkedin,
+    });
+    setEditOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditOpen(false);
+    setEditingClient(null);
+    editForm.resetFields();
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingClient) return;
+    try {
+      const values = await editForm.validateFields();
+      setSavingEdit(true);
+      const res = await fetch(`/api/sales/clients/${editingClient.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(values),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update client");
+      }
+      message.success("Client updated successfully");
+      closeEditModal();
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to update client");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleDeleteClient = async (record: ClientRow) => {
+    try {
+      setDeletingClientId(record.id);
+      const res = await fetch(`/api/sales/clients/${record.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to delete client");
+      }
+      message.success("Client deleted successfully");
+      fetchData();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to delete client");
+    } finally {
+      setDeletingClientId(null);
+    }
   };
 
   if (!isInitialized) {
@@ -243,6 +332,38 @@ export default function SalesClientsPage() {
       width: 110,
       render: (v: string) => new Date(v).toLocaleDateString(),
     },
+    {
+      title: "Actions",
+      key: "actions",
+      fixed: "right" as const,
+      width: 100,
+      render: (_: unknown, record: ClientRow) => (
+        <Space size="small">
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => openEditModal(record)}
+            disabled={!canManageClients}
+          />
+          <Popconfirm
+            title="Delete client"
+            description={`Delete ${record.company_name}? This cannot be undone.`}
+            okText="Delete"
+            okButtonProps={{ danger: true, loading: deletingClientId === record.id }}
+            onConfirm={() => handleDeleteClient(record)}
+          >
+            <Button
+              type="text"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              disabled={!canManageClients}
+            />
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ];
 
   return (
@@ -256,7 +377,12 @@ export default function SalesClientsPage() {
             Manage clients and their campaigns
           </Typography.Text>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() => setDrawerOpen(true)}
+          disabled={!canManageClients}
+        >
           Add Client
         </Button>
       </div>
@@ -303,8 +429,8 @@ export default function SalesClientsPage() {
               columns={columns}
               dataSource={clients}
               rowKey="id"
-              scroll={{ x: 2200 }}
-              pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} clients` }}
+              scroll={{ x: 2350 }}
+              pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} clients` }}
               locale={{ emptyText: "No clients yet. Click Add Client to create one." }}
               expandable={{
                 expandedRowRender: (record: ClientRow) => {
@@ -356,6 +482,113 @@ export default function SalesClientsPage() {
           showCancel={true}
         />
       </Drawer>
+
+      <Modal
+        title="Edit Client"
+        open={editOpen}
+        onCancel={closeEditModal}
+        onOk={handleSaveEdit}
+        okText="Save"
+        confirmLoading={savingEdit}
+        destroyOnClose
+        width={820}
+      >
+        <Form form={editForm} layout="vertical" className="mt-4">
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="company_name"
+                label="Company Name"
+                rules={[{ required: true, message: "Company name is required" }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="company_website" label="Company Website">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="industry_type" label="Industry Type">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="company_size" label="Company Size">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="year_established" label="Year Established">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="company_address" label="Company Address">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="city" label="City">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="state" label="State">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                name="country"
+                label="Country"
+                rules={[{ required: true, message: "Country is required" }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                name="contact_person"
+                label="Contact Person"
+                rules={[{ required: true, message: "Contact person is required" }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item
+                name="contact_full_name"
+                label="Contact Full Name"
+                rules={[{ required: true, message: "Full name is required" }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="contact_designation" label="Designation">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="contact_work_email" label="Work Email">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="contact_mobile" label="Mobile">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item name="contact_linkedin" label="LinkedIn">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Modal>
     </>
   );
 }

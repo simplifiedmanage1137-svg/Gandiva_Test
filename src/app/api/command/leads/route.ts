@@ -14,6 +14,8 @@ import {
 } from "@/lib/command/format-lead-history-action";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database.types";
+import { leadsToCsv } from "@/lib/leadsExport";
+import type { Lead } from "@/types/lead.types";
 
 export const dynamic = "force-dynamic";
 
@@ -198,8 +200,7 @@ function escapeCsvCell(v: unknown): string {
   return s;
 }
 
-const LEAD_LIST_SELECT = `id, name, first_name, last_name, company_name, job_title, email, phone, city, status, consent_status,
-  channel, risk_flags, created_at, updated_at, registered_at, campaign_id, assigned_agent_id, rep_id, lead_tagging,
+const LEAD_LIST_SELECT = `*, 
   campaigns(id, name, campaign_id, client_id, client_name, status, start_date, end_date)`;
 
 type LeadListRow = Record<string, unknown>;
@@ -279,6 +280,7 @@ export async function GET(request: NextRequest) {
   const dateTo = sp.get("date_to")?.trim() || null;
   const consentTypeIn = parseList(sp, "consent_type_in");
   const riskActive = sp.get("risk_active") === "1" || sp.get("risk_active") === "true";
+  const deliveryStatus = sp.get("delivery_status")?.trim().toLowerCase() || null;
   const formatCsv = sp.get("format") === "csv";
 
   const cursor = sp.get("cursor");
@@ -312,9 +314,8 @@ export async function GET(request: NextRequest) {
 
   const emptyResponse = () => {
     if (formatCsv) {
-      const header =
-        "Name,Company,Title,Channel,Status,Consent Status,Rep ID,Last Action,Last Action Date,Risk";
-      return new NextResponse(`${header}\n`, {
+      const csv = leadsToCsv([] as Lead[]);
+      return new NextResponse(csv, {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": 'attachment; filename="leads.csv"',
@@ -384,11 +385,16 @@ export async function GET(request: NextRequest) {
       x = x.lte("created_at", `${dateTo}T23:59:59.999Z`);
     }
 
+    if (deliveryStatus === "delivered" || deliveryStatus === "not_delivered") {
+      x = x.eq("delivery_status", deliveryStatus);
+    }
+
     if (userRoles.includes("client_viewer")) {
       if (!profile?.client_id) {
         return null;
       }
       x = x.eq("campaigns.client_id", profile.client_id);
+      x = x.eq("delivery_status", "delivered");
     }
 
     return x;
@@ -422,58 +428,7 @@ export async function GET(request: NextRequest) {
   const toCsv = async (rows: LeadListRow[]) => {
     const withUsers = await attachAssignedUsers(supabase, rows);
     const withHist = await enrichWithHistory(supabase, withUsers);
-    const header = [
-      "Name",
-      "Company",
-      "Title",
-      "Channel",
-      "Status",
-      "Consent Status",
-      "Rep ID",
-      "Last Action",
-      "Last Action Date",
-      "Risk",
-    ];
-    const lines = [header.map(escapeCsvCell).join(",")];
-    for (const row of withHist) {
-      const ch = String(row.channel ?? "email");
-      const au = row.assigned_user as
-        | { full_name?: string | null; agent_code?: string | null; employee_id?: string | null }
-        | null
-        | undefined;
-      const repDisplay =
-        ch === "telemarketing"
-          ? String(row.rep_id ?? au?.agent_code ?? au?.employee_id ?? au?.full_name ?? "").trim() ||
-            ""
-          : "";
-      const rf = row.risk_flags as unknown;
-      const riskTxt = hasActiveRisk(rf)
-        ? Array.isArray(rf)
-          ? (rf as { description?: string }[])
-              .map((x) =>
-                typeof x === "object" && x && "description" in x ? String(x.description) : JSON.stringify(x)
-              )
-              .join("; ")
-          : JSON.stringify(rf)
-        : "";
-      lines.push(
-        [
-          rowDisplayName(row),
-          row.company_name,
-          row.job_title,
-          ch,
-          row.status,
-          row.consent_status,
-          repDisplay,
-          row.last_action,
-          row.last_action_at,
-          riskTxt,
-        ]
-          .map(escapeCsvCell)
-          .join(",")
-      );
-    }
-    return lines.join("\n");
+    return leadsToCsv(withHist as unknown as Lead[]);
   };
 
   if (formatCsv) {
