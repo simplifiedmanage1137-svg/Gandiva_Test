@@ -2209,7 +2209,6 @@ export default function CampaignDashboard({
     <div>
       <div
         style={{
-          position: "sticky",
           // Pull up by dashboard Content padding so no grey strip shows above the bar while scrolling.
           top: "calc(-1 * var(--app-content-padding, 0px))",
           zIndex: 20,
