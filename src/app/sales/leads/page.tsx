@@ -670,7 +670,7 @@ export default function SalesLeadsPage() {
           rowKey="id"
           scroll={{ x: 900, y: 480 }}
           pagination={{
-            pageSize: 10,
+            defaultPageSize: 10,
             showSizeChanger: true,
             showTotal: (t) => `Total ${t} leads`,
           }}

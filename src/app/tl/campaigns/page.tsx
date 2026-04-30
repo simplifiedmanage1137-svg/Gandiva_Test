@@ -355,7 +355,7 @@ export default function TLCampaignsPage() {
               dataSource={filteredCampaigns}
               rowKey="id"
               scroll={{ x: 1150 }}
-              pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} campaigns` }}
+              pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} campaigns` }}
               locale={{ emptyText: "No campaigns yet. Create your first campaign." }}
             />
           </Card>

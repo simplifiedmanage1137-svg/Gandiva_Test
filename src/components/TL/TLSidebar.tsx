@@ -7,7 +7,7 @@ import Image from "next/image";
 import {
   DashboardOutlined,
   TeamOutlined,
-  FilterOutlined,
+  FileSearchOutlined,
   FundProjectionScreenOutlined,
   UserOutlined,
 } from "@ant-design/icons";
@@ -17,9 +17,9 @@ const { Sider } = Layout;
 const tlMenuItems = [
   { key: "/tl/dashboard", icon: <DashboardOutlined />, label: "Dashboard", href: "/tl/dashboard" },
   { key: "/tl/campaigns", icon: <FundProjectionScreenOutlined />, label: "Campaigns", href: "/tl/campaigns" },
+  { key: "/tl/leads", icon: <FileSearchOutlined />, label: "Leads", href: "/tl/leads" },
   { key: "/tl/users", icon: <UserOutlined />, label: "Users", href: "/tl/users" },
   { key: "/tl/team", icon: <TeamOutlined />, label: "Team", href: "/tl/team" },
-  { key: "/tl/pipeline", icon: <FilterOutlined />, label: "Pipeline", href: "/tl/pipeline" },
 ];
 
 export default function TLSidebar() {
@@ -32,8 +32,8 @@ export default function TLSidebar() {
       ? "/tl/users"
       : pathname?.startsWith("/tl/team")
       ? "/tl/team"
-      : pathname?.startsWith("/tl/pipeline")
-      ? "/tl/pipeline"
+      : pathname?.startsWith("/tl/leads")
+      ? "/tl/leads"
       : "/tl/dashboard";
 
   return (

@@ -78,7 +78,10 @@ export async function getRoleNames(
     .from("user_roles")
     .select("roles(name)")
     .eq("user_id", userId)) as { data: CommandRoleRow[] | null };
-  return (data ?? []).flatMap((r) => (r.roles ? [r.roles.name] : []));
+  return (data ?? [])
+    .flatMap((r) => (r.roles?.name ? [r.roles.name] : []))
+    .map((name) => name.toLowerCase().trim().replace(/\s+/g, "_"))
+    .filter((name) => name.length > 0);
 }
 
 // ─── Alerts ───────────────────────────────────────────────────────────────────
@@ -498,6 +501,7 @@ interface LeadAnalyticsRow {
   status: string;
   consent_status: string | null;
   channel: string | null;
+  delivery_status: string | null;
   created_at: string;
 }
 
@@ -524,7 +528,7 @@ export async function getCampaignAnalytics(supabase: Client, campaignId: string)
 
   const leadsResult = (await supabase
     .from("leads")
-    .select("id, status, consent_status, channel, created_at")
+    .select("id, status, consent_status, channel, delivery_status, created_at")
     .eq("campaign_id", campaignId)) as unknown as {
     data: LeadAnalyticsRow[] | null;
   };
@@ -573,7 +577,8 @@ export interface CommandListLeadAgg {
 export async function aggregateCommandLeadStatsByCampaign(
   supabase: Client,
   organizationId: string,
-  campaignIds: string[]
+  campaignIds: string[],
+  options?: { deliveredOnly?: boolean }
 ): Promise<Record<string, CommandListLeadAgg>> {
   const postQaVerified = new Set(["qualified", "registered", "attended", "no_show"]);
 
@@ -588,26 +593,35 @@ export async function aggregateCommandLeadStatsByCampaign(
     verified: 0,
   });
   if (campaignIds.length === 0) return {};
-  const { data, error } = await supabase
+  let leadsQuery = supabase
     .from("leads")
-    .select("campaign_id, status, consent_status")
+    .select("campaign_id, status, qa_status, consent_status")
     .eq("organization_id", organizationId)
     .in("campaign_id", campaignIds);
+  if (options?.deliveredOnly) {
+    leadsQuery = leadsQuery.in("delivery_status", ["delivered", "Delivered"]);
+  }
+  const { data, error } = await leadsQuery;
   if (error) throw new Error(error.message);
   const out: Record<string, CommandListLeadAgg> = {};
   for (const id of campaignIds) out[id] = empty();
   for (const row of (data ?? []) as {
     campaign_id: string;
     status: string;
+    qa_status: string | null;
     consent_status: string | null;
   }[]) {
     const b = out[row.campaign_id];
     if (!b) continue;
     b.total += 1;
-    const st = String(row.status ?? "").toLowerCase();
-    if (st === "qualified") b.qualified += 1;
-    if (postQaVerified.has(st)) b.qa_verified += 1;
-    if (st === "disqualified") b.dq += 1;
+    const st = String(row.status ?? "").toLowerCase().trim();
+    const qa = String(row.qa_status ?? "").toLowerCase().trim();
+    const qaOrStatus = qa || st;
+    // Keep campaign list qualified% consistent with dashboard analytics:
+    // treat post-QA leads (qualified/registered/attended/no_show) as qualified-like.
+    if (postQaVerified.has(qaOrStatus) || postQaVerified.has(st)) b.qualified += 1;
+    if (postQaVerified.has(qaOrStatus) || postQaVerified.has(st)) b.qa_verified += 1;
+    if (qaOrStatus === "disqualified" || st === "disqualified") b.dq += 1;
     const cs = String(row.consent_status ?? "pending").toLowerCase();
     if (cs === "missing") b.missingConsent += 1;
     else if (cs === "disputed") b.disputedConsent += 1;

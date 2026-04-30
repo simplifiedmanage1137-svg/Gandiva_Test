@@ -704,7 +704,7 @@ export default function CampaignDetailPage() {
           dataSource={filteredLeads}
           rowKey="id"
           scroll={{ x: 2600 }}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
           locale={{ emptyText: "No leads yet" }}
           size="middle"
           onRow={(record) => ({

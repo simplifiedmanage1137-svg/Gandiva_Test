@@ -19,6 +19,7 @@ export type Lead = {
   updated_at: string;
   assigned_agent_name: string | null;
   created_by_name: string | null;
+  channel?: "Email" | "Telemarketing" | null;
   // Contact Person
   salutation: string | null;
   first_name: string | null;
@@ -77,6 +78,7 @@ export type Lead = {
   audit_date: string | null;
   qa_name: string | null;
   qa_status: string | null;
+  delivery_status: "not_delivered" | "delivered" | null;
   disqualification_reasons: string | null;
   disqualification_reason: string | null;
   rectified_reason: string | null;

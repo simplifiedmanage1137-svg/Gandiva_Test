@@ -624,7 +624,7 @@ export default function MISDashboardPage() {
                   size="middle"
                   scroll={{ x: 700 }}
                   pagination={{
-                    pageSize: 10,
+                    defaultPageSize: 10,
                     showSizeChanger: true,
                     showTotal: (t) => `Total ${t} campaigns`,
                   }}

@@ -19,10 +19,19 @@ const STATUS_COLORS: Record<string, string> = {
 type ColumnConfig = {
   showActions?: boolean;
   onEdit?: (lead: Lead) => void;
+  showDeliveryStatus?: boolean;
+  onMarkDelivered?: (lead: Lead) => void;
+  markingDeliveredLeadId?: string | null;
 };
 
 export function getLeadTableColumns(config: ColumnConfig = {}) {
-  const { showActions = true, onEdit } = config;
+  const {
+    showActions = true,
+    onEdit,
+    showDeliveryStatus = false,
+    onMarkDelivered,
+    markingDeliveredLeadId,
+  } = config;
 
   const baseColumns: NonNullable<TableProps<Lead>["columns"]> = [
     {
@@ -49,8 +58,22 @@ export function getLeadTableColumns(config: ColumnConfig = {}) {
           );
         };
         return (
-          <span className="lead-id-cell" style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{id}</span>
+          <span
+            className="lead-id-cell"
+            style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", minWidth: 0 }}
+          >
+            <span
+              style={{
+                flex: 1,
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                display: "block",
+              }}
+            >
+              {id}
+            </span>
             <Button
               type="text"
               size="small"
@@ -114,6 +137,14 @@ export function getLeadTableColumns(config: ColumnConfig = {}) {
       render: (v: string | null) => v || "—",
     },
     {
+      title: "Channel",
+      dataIndex: "channel",
+      key: "channel",
+      width: 190,
+      ellipsis: true,
+      render: (v: string | null | undefined) => v || "—",
+    },
+    {
       title: "Status",
       dataIndex: "status",
       key: "status",
@@ -124,6 +155,55 @@ export function getLeadTableColumns(config: ColumnConfig = {}) {
         </Tag>
       ),
     },
+    ...(showDeliveryStatus
+      ? [
+          {
+            title: "Delivery",
+            dataIndex: "delivery_status",
+            key: "delivery_status",
+            width: 220,
+            fixed: "right" as const,
+            filters: [
+              { text: "Delivered", value: "delivered" },
+              { text: "Not Delivered", value: "not_delivered" },
+            ],
+            onFilter: (value, record) =>
+              (record.delivery_status ?? "not_delivered") === String(value),
+            render: (v: Lead["delivery_status"], record: Lead) => {
+              const status = (v ?? "not_delivered") as "not_delivered" | "delivered";
+              const delivered = status === "delivered";
+              return (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <Tag color={delivered ? "green" : "default"} style={{ margin: 0 }}>
+                    {delivered ? "Delivered" : "Not Delivered"}
+                  </Tag>
+                  {!delivered && onMarkDelivered ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMarkDelivered(record);
+                      }}
+                      loading={markingDeliveredLeadId === record.id}
+                      style={{ paddingInline: 0, height: "auto" }}
+                    >
+                      Mark as Delivered
+                    </Button>
+                  ) : null}
+                </span>
+              );
+            },
+          } as NonNullable<TableProps<Lead>["columns"]>[number],
+        ]
+      : []),
     {
       title: "QA Status",
       dataIndex: "qa_status",
@@ -133,18 +213,19 @@ export function getLeadTableColumns(config: ColumnConfig = {}) {
       filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
         <div style={{ padding: 8 }}>
           <Select
+            mode="multiple"
             allowClear
             placeholder="Filter QA status"
             style={{ width: 180, marginBottom: 8, display: "block" }}
-            value={(selectedKeys[0] as string | undefined) ?? undefined}
+            value={(selectedKeys as string[]) ?? []}
             options={[
               { value: "qualified", label: "Qualified" },
               { value: "disqualified", label: "Disqualified" },
               { value: "rectified", label: "Rectified" },
             ]}
-            onChange={(value) => {
-              if (value) {
-                setSelectedKeys([value]);
+            onChange={(values) => {
+              if (values && values.length > 0) {
+                setSelectedKeys(values);
               } else {
                 setSelectedKeys([]);
               }
@@ -263,44 +344,73 @@ export function getLeadTableColumns(config: ColumnConfig = {}) {
       title: "Employee Size",
       dataIndex: "employee_size",
       key: "employee_size",
-      width: 120,
-      render: (v: string | null) => v || "—",
+      width: 150,
+      ellipsis: true,
+      render: (v: string | null) => (
+        <span className="table-text-ellipsis" title={v || "—"}>
+          {v || "—"}
+        </span>
+      ),
     },
     {
       title: "Address",
       dataIndex: "address",
       key: "address",
-      width: 180,
+      width: 240,
       ellipsis: true,
-      render: (v: string | null) => v || "—",
+      render: (v: string | null) => (
+        <span className="table-text-ellipsis" title={v || "—"}>
+          {v || "—"}
+        </span>
+      ),
     },
     {
       title: "City",
       dataIndex: "city",
       key: "city",
       width: 100,
-      render: (v: string | null) => v || "—",
+      ellipsis: true,
+      render: (v: string | null) => (
+        <span className="table-text-ellipsis" title={v || "—"}>
+          {v || "—"}
+        </span>
+      ),
     },
     {
       title: "State",
       dataIndex: "state",
       key: "state",
       width: 100,
-      render: (v: string | null) => v || "—",
+      ellipsis: true,
+      render: (v: string | null) => (
+        <span className="table-text-ellipsis" title={v || "—"}>
+          {v || "—"}
+        </span>
+      ),
     },
     {
       title: "Country",
       dataIndex: "country",
       key: "country",
       width: 100,
-      render: (v: string | null) => v || "—",
+      ellipsis: true,
+      render: (v: string | null) => (
+        <span className="table-text-ellipsis" title={v || "—"}>
+          {v || "—"}
+        </span>
+      ),
     },
     {
       title: "Zip",
       dataIndex: "zip_code",
       key: "zip_code",
       width: 90,
-      render: (v: string | null) => v || "—",
+      ellipsis: true,
+      render: (v: string | null) => (
+        <span className="table-text-ellipsis" title={v || "—"}>
+          {v || "—"}
+        </span>
+      ),
     },
     ...baseColumns.slice(8),
   ];

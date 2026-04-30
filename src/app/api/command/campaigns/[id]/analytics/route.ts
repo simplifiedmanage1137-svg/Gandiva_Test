@@ -11,6 +11,7 @@ interface LeadRow {
   status: string;
   consent_status: string | null;
   channel: string | null;
+  delivery_status: string | null;
   created_at: string;
 }
 
@@ -389,7 +390,12 @@ export async function GET(
 
     const { metrics, leads, history, alerts } = await getCampaignAnalytics(supabase, id);
 
-    const typedLeads = leads as LeadRow[];
+    const typedLeadsAll = leads as LeadRow[];
+    const typedLeads = userRoles.includes("client_viewer")
+      ? typedLeadsAll.filter(
+          (l) => String(l.delivery_status ?? "").toLowerCase() === "delivered"
+        )
+      : typedLeadsAll;
 
     const statusBreakdown = typedLeads.reduce<Record<string, number>>((acc, l) => {
       acc[l.status] = (acc[l.status] ?? 0) + 1;
@@ -421,12 +427,12 @@ export async function GET(
     const sp = request.nextUrl.searchParams;
     let rangeStart =
       sp.get("date_from")?.trim() ||
-      (campaignDates as { start_date?: string | null } | null)?.start_date ||
-      dataMin;
+      dataMin ||
+      (campaignDates as { start_date?: string | null } | null)?.start_date;
     let rangeEnd =
       sp.get("date_to")?.trim() ||
-      (campaignDates as { end_date?: string | null } | null)?.end_date ||
-      dataMax;
+      dataMax ||
+      (campaignDates as { end_date?: string | null } | null)?.end_date;
 
     if (!rangeStart) rangeStart = dataMin;
     if (!rangeEnd) rangeEnd = dataMax;
@@ -444,12 +450,16 @@ export async function GET(
     );
     const channelSummary = buildChannelSummaries(typedLeads, firstQualifiedAt);
 
-    const { data: complianceLeadRows, error: complianceLeadsErr } = await supabase
+    let complianceLeadQuery = supabase
       .from("leads")
       .select(
         "id, status, consent_status, channel, created_at, name, first_name, last_name, company_name"
       )
       .eq("campaign_id", id);
+    if (userRoles.includes("client_viewer")) {
+      complianceLeadQuery = complianceLeadQuery.eq("delivery_status", "delivered");
+    }
+    const { data: complianceLeadRows, error: complianceLeadsErr } = await complianceLeadQuery;
 
     if (complianceLeadsErr) {
       throw new Error(complianceLeadsErr.message);

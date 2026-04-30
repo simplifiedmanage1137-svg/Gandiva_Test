@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAdminClientSafe, ADMIN_NOT_CONFIGURED_MESSAGE } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -8,12 +9,12 @@ const LEAD_FIELDS = [
   "direct_number", "company_number", "phone_number_link", "job_title", "job_level", "department",
   "job_function", "job_title_link", "tenurity", "vv_status", "email_status", "ev_tool",
   "address", "city", "state", "country", "zip_code", "employee_size", "see_all_employees",
-  "industry", "employee_size_link", "company_website_link", "revenue_range", "revenue_link",
+  "industry", "channel", "employee_size_link", "company_website_link", "revenue_range", "revenue_link",
   "sic_code", "sic_code_link", "naics_code", "naics_code_link", "founded_years", "founded_years_link",
   "contact_linkedin_url", "company_linkedin_url", "scored", "appointment", "lead_tagging", "ra_comment", "special_comments", "call_back",
   "call_notes", "primary_reason", "secondary_reason", "qa_comments", "cq1", "cq2", "cq3", "cq4", "cq5",
   "audit_date", "qa_name", "asset_title", "status", "qa_status", "disqualification_reasons",
-  "disqualification_reason", "rectified_reason", "lead_disposition", "followup_date", "notes",
+  "disqualification_reason", "rectified_reason", "lead_disposition", "followup_date", "notes", "delivery_status",
 ] as const;
 
 function pickLeadFields(obj: Record<string, unknown>): Record<string, unknown> {
@@ -25,6 +26,14 @@ function pickLeadFields(obj: Record<string, unknown>): Record<string, unknown> {
     }
   }
   return out;
+}
+
+function getChannelCandidates(channel: string | null): (string | null)[] {
+  if (!channel) return [null];
+  const lower = channel.toLowerCase();
+  if (lower === "email") return ["Email", "email"];
+  if (lower === "telemarketing") return ["Telemarketing", "telemarketing"];
+  return [channel];
 }
 
 export async function POST(
@@ -57,17 +66,28 @@ export async function POST(
     const roleNames = ((roleRows ?? []) as { roles: { name: string } | null }[]).map((r) =>
       r.roles?.name?.toLowerCase().trim().replace(/\s+/g, "_")
     );
-    const canImport = roleNames.includes("team_leader") || roleNames.includes("tl") || roleNames.includes("qa") || roleNames.includes("admin");
+    const canImport =
+      roleNames.includes("team_leader") ||
+      roleNames.includes("tl") ||
+      roleNames.includes("qa") ||
+      roleNames.includes("mis") ||
+      roleNames.includes("admin");
     if (!canImport) {
       return NextResponse.json({ error: "You do not have permission to import leads" }, { status: 403 });
     }
+    const useAdminDataClient = roleNames.includes("mis") || roleNames.includes("admin");
+    const admin = useAdminDataClient ? getAdminClientSafe() : null;
+    if (useAdminDataClient && !admin) {
+      return NextResponse.json({ error: ADMIN_NOT_CONFIGURED_MESSAGE }, { status: 503 });
+    }
+    const dataClient = admin ?? supabase;
 
     const { id: campaignId } = await params;
     if (!campaignId) {
       return NextResponse.json({ error: "Campaign ID required" }, { status: 400 });
     }
 
-    const { data: campaign } = await supabase
+    const { data: campaign } = await dataClient
       .from("campaigns")
       .select("id")
       .eq("id", campaignId)
@@ -87,7 +107,7 @@ export async function POST(
       return NextResponse.json({ error: "Maximum 500 leads per import" }, { status: 400 });
     }
 
-    const { data: assignments } = await supabase
+    const { data: assignments } = await dataClient
       .from("campaign_assignments")
       .select("agent_id")
       .eq("campaign_id", campaignId)
@@ -109,6 +129,21 @@ export async function POST(
       const derivedName = [first_name, last_name].filter(Boolean).join(" ").trim() || (fields.name as string) || null;
 
       const leadStatus = typeof fields.status === "string" && fields.status.length > 0 ? fields.status : "new";
+      const deliveryStatusRaw = typeof fields.delivery_status === "string" ? fields.delivery_status.trim().toLowerCase() : "";
+      const normalizedDeliveryStatus =
+        deliveryStatusRaw === "delivered"
+          ? "delivered"
+          : deliveryStatusRaw === "not_delivered" || deliveryStatusRaw === "not delivered"
+          ? "not_delivered"
+          : null;
+      const channelRaw = typeof fields.channel === "string" ? fields.channel.trim().toLowerCase() : "";
+      const normalizedChannel =
+        channelRaw === "email"
+          ? "Email"
+          : channelRaw === "telemarketing"
+          ? "Telemarketing"
+          : null;
+      const channelCandidates = getChannelCandidates(normalizedChannel);
 
       const upsertPayload = {
         name: derivedName || null,
@@ -139,6 +174,7 @@ export async function POST(
         employee_size: fields.employee_size || null,
         see_all_employees: fields.see_all_employees || null,
         industry: fields.industry || null,
+        channel: normalizedChannel,
         employee_size_link: fields.employee_size_link || null,
         company_website_link: fields.company_website_link || null,
         revenue_range: fields.revenue_range || null,
@@ -177,16 +213,27 @@ export async function POST(
         lead_disposition: fields.lead_disposition || null,
         followup_date: fields.followup_date || null,
         notes: fields.notes || null,
+        delivery_status: normalizedDeliveryStatus ?? undefined,
       } as Record<string, unknown>;
 
       // If CSV has existing id, update that lead; otherwise create new one
       if (rowId) {
-        const { error: updateError } = await supabase
-          .from("leads")
-          .update(upsertPayload as never)
-          .eq("id", rowId)
-          .eq("campaign_id", campaignId)
-          .eq("organization_id", orgId);
+        if (!normalizedDeliveryStatus) {
+          delete upsertPayload.delivery_status;
+        }
+        let updateError: { message: string } | null = null;
+        for (const candidateChannel of channelCandidates) {
+          const payload = { ...upsertPayload, channel: candidateChannel } as Record<string, unknown>;
+          const { error } = await dataClient
+            .from("leads")
+            .update(payload as never)
+            .eq("id", rowId)
+            .eq("campaign_id", campaignId)
+            .eq("organization_id", orgId);
+          updateError = error as { message: string } | null;
+          if (!updateError) break;
+          if (!updateError.message?.includes("leads_channel_check")) break;
+        }
 
         if (updateError) {
           errors.push(`Row ${i + 1}: ${updateError.message}`);
@@ -199,15 +246,23 @@ export async function POST(
           continue;
         }
 
-        const { error: insertError } = await supabase
-          .from("leads")
-          .insert({
-            organization_id: orgId,
-            campaign_id: campaignId,
-            assigned_agent_id: firstAgentId,
-            ...upsertPayload,
-            created_by: user.id,
-          } as never);
+        let insertError: { message: string } | null = null;
+        for (const candidateChannel of channelCandidates) {
+          const { error } = await dataClient
+            .from("leads")
+            .insert({
+              organization_id: orgId,
+              campaign_id: campaignId,
+              assigned_agent_id: firstAgentId,
+              ...upsertPayload,
+              delivery_status: normalizedDeliveryStatus ?? "not_delivered",
+              channel: candidateChannel,
+              created_by: user.id,
+            } as never);
+          insertError = error as { message: string } | null;
+          if (!insertError) break;
+          if (!insertError.message?.includes("leads_channel_check")) break;
+        }
 
         if (insertError) {
           errors.push(`Row ${i + 1}: ${insertError.message}`);

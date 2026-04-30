@@ -233,27 +233,27 @@ export async function POST(
       );
     }
 
-    const formData = await request.formData();
-    const file =
-      (formData.get("file") as File | null) ||
-      (formData.get("files") as File | null);
+    const body = await request.json().catch(() => null);
+    const fileName = body?.fileName as string | undefined;
+    const fileSize = body?.fileSize as number | undefined;
+    const fileType = body?.fileType as string | undefined;
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    if (!fileName || typeof fileName !== "string") {
+      return NextResponse.json({ error: "Invalid file name" }, { status: 400 });
     }
 
-    if (typeof file.size !== "number" || file.size <= 0) {
-      return NextResponse.json({ error: "Invalid file" }, { status: 400 });
+    if (typeof fileSize !== "number" || fileSize <= 0) {
+      return NextResponse.json({ error: "Invalid file size" }, { status: 400 });
     }
 
-    if (file.size > MAX_FILE_SIZE) {
+    if (fileSize > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: "File too large. Maximum size is 20MB." },
         { status: 400 }
       );
     }
 
-    const mime = file.type || "application/octet-stream";
+    const mime = typeof fileType === "string" && fileType.length > 0 ? fileType : "application/octet-stream";
     const isAudio =
       ALLOWED_AUDIO_TYPES.includes(mime) || mime.startsWith("audio/");
     if (!isAudio) {
@@ -263,27 +263,28 @@ export async function POST(
       );
     }
 
-    const safeName = sanitizeFileName(file.name || "recording");
+    const safeName = sanitizeFileName(fileName || "recording");
     const objectPath = `${orgId}/${lead.campaign_id}/${lead.id}/${crypto.randomUUID()}_${safeName}`;
 
-    const { error: uploadError } = await admin.storage
+    const { data: signedUpload, error: signError } = await admin.storage
       .from(VOICE_BUCKET)
-      .upload(objectPath, file, {
-        contentType: mime,
-        upsert: false,
-      });
+      .createSignedUploadUrl(objectPath);
 
-    if (uploadError) {
+    if (signError || !signedUpload?.token) {
       return NextResponse.json(
-        { error: uploadError.message ?? "Failed to upload recording" },
+        { error: signError?.message ?? "Failed to prepare recording upload" },
         { status: 500 }
       );
     }
 
-    const { recordings, error } = await listVoiceObjects(admin, orgId, lead);
-    if (error) return error;
-
-    return NextResponse.json({ recordings });
+    return NextResponse.json({
+      upload: {
+        path: objectPath,
+        token: signedUpload.token,
+        bucket: VOICE_BUCKET,
+        contentType: mime,
+      },
+    });
   } catch (err) {
     console.error("Voice Log POST error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

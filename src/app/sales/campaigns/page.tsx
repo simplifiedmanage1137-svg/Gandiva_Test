@@ -493,7 +493,7 @@ export default function SalesCampaignsPage() {
               dataSource={filteredCampaigns}
               rowKey="id"
               scroll={{ x: 1920 }}
-              pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} campaigns` }}
+              pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} campaigns` }}
               locale={{ emptyText: searchText || statusFilter ? "No campaigns match the filter." : "No campaigns yet. Create your first campaign." }}
               tableLayout="fixed"
             />

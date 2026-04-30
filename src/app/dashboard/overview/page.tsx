@@ -23,7 +23,7 @@ const { RangePicker } = DatePicker;
 interface OverviewResponse {
   campaigns: Array<{ id: string; name: string; campaign_id: string }>;
   selectedCampaignId: string | null;
-  kpis: { totalLeads: number; qualified: number; registrations: number; attendees: number };
+  kpis: { totalCampaigns: number; totalLeads: number; qualified: number; registrations: number; attendees: number };
   metrics: {
     total_leads_allocated: number;
     total_campaign_spend: number;
@@ -175,7 +175,7 @@ export default function OverviewPage() {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         {[
-          { title: "Campaigns", value: data?.kpis.totalLeads ?? 0, color: "#1677ff" },
+          { title: "Campaigns", value: data?.kpis.totalCampaigns ?? data?.campaigns.length ?? 0, color: "#1677ff" },
           { title: "Total Qualified Leads", value: data?.kpis.qualified ?? 0, color: "#52c41a" },
           { title: "Registrations on client in LP", value: data?.kpis.registrations ?? 0, color: "#faad14" },
           { title: "Attendees", value: data?.kpis.attendees ?? 0, color: "#722ed1" },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Table,
@@ -45,6 +45,9 @@ export default function TLUsersPage() {
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const currentPage = pagination.current;
+  const pageSize = pagination.pageSize;
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -76,6 +79,33 @@ export default function TLUsersPage() {
     }
     fetchUsers();
   }, [isInitialized, hasRole, router, fetchUsers]);
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredUsers = useMemo(() => {
+    if (!normalizedQuery) return users;
+
+    return users.filter((user) => {
+      const searchableFields = [
+        user.full_name ?? "",
+        user.email ?? "",
+        user.department ?? "",
+        user.designation ?? "",
+        user.status ?? "",
+        ...(user.roles?.map((role) => role.name ?? "") ?? []),
+      ];
+
+      return searchableFields.some((field) =>
+        field.toLowerCase().includes(normalizedQuery),
+      );
+    });
+  }, [users, normalizedQuery]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+    if (currentPage > maxPage) {
+      setPagination((prev) => ({ ...prev, current: maxPage }));
+    }
+  }, [filteredUsers.length, currentPage, pageSize]);
 
   const handleCreateUser = async () => {
     try {
@@ -371,6 +401,16 @@ export default function TLUsersPage() {
             Create User
           </Button>
         </div>
+        <Input.Search
+          allowClear
+          placeholder="Search by name, email, role, department, or status"
+          value={searchQuery}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+            setPagination((prev) => ({ ...prev, current: 1 }));
+          }}
+          style={{ marginTop: 16, maxWidth: 420 }}
+        />
       </div>
 
       {error && (
@@ -388,7 +428,7 @@ export default function TLUsersPage() {
           <Table
             className="table-single-line"
             columns={columns}
-            dataSource={users}
+            dataSource={filteredUsers}
             rowKey="id"
             locale={{ emptyText: "No users found" }}
             pagination={{
@@ -396,7 +436,8 @@ export default function TLUsersPage() {
               pageSize: pagination.pageSize,
               showSizeChanger: true,
               showTotal: (total) => `Total ${total} users`,
-              onChange: (page, pageSize) => setPagination({ current: page, pageSize: pageSize || 10 }),
+              onChange: (page, pageSize) =>
+                setPagination({ current: page, pageSize: pageSize || 10 }),
             }}
           />
         )}

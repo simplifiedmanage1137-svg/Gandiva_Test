@@ -31,6 +31,48 @@ function listCompliance(L: CommandListLeadAgg, A: CommandListAlertAgg): "green" 
   return "green";
 }
 
+async function getClientViewerUserIdsForOrg(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  organizationId: string
+): Promise<string[]> {
+  const admin = getAdminClientSafe();
+  const lookupClient = admin ?? supabase;
+
+  let rolesQuery = lookupClient
+    .from("roles")
+    .select("id, name")
+    .eq("organization_id", organizationId);
+  const { data: roleRows, error: roleErr } = await rolesQuery;
+  if (roleErr) throw new Error(roleErr.message);
+
+  const clientViewerRoleIds = ((roleRows ?? []) as { id: string; name: string | null }[])
+    .filter((r) => (r.name ?? "").toLowerCase().trim().replace(/\s+/g, "_") === "client_viewer")
+    .map((r) => r.id);
+
+  if (clientViewerRoleIds.length === 0) return [];
+
+  const { data: links, error: linkErr } = await lookupClient
+    .from("user_roles")
+    .select("user_id")
+    .in("role_id", clientViewerRoleIds);
+  if (linkErr) throw new Error(linkErr.message);
+
+  const userIds = [
+    ...new Set(((links ?? []) as { user_id: string }[]).map((r) => r.user_id).filter(Boolean)),
+  ];
+  if (userIds.length === 0) return [];
+
+  // Keep scope within same organization to avoid accidental cross-org leakage.
+  const { data: usersRows, error: usersErr } = await lookupClient
+    .from("users")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .in("id", userIds);
+  if (usersErr) throw new Error(usersErr.message);
+
+  return ((usersRows ?? []) as { id: string }[]).map((u) => u.id);
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -54,8 +96,18 @@ export async function GET(request: NextRequest) {
     const dateTo = sp.get("date_to")?.trim() ?? "";
 
     const clientViewerId = profile?.client_id ?? null;
+    let clientViewerUserIds: string[] = [];
     if (userRoles.includes("client_viewer")) {
       if (!clientViewerId) {
+        return NextResponse.json({
+          campaigns: [],
+          total: 0,
+          truncated: false,
+          limit: LIST_MAX,
+        });
+      }
+      clientViewerUserIds = await getClientViewerUserIdsForOrg(supabase, orgId);
+      if (clientViewerUserIds.length === 0) {
         return NextResponse.json({
           campaigns: [],
           total: 0,
@@ -70,7 +122,7 @@ export async function GET(request: NextRequest) {
       .select(
         `id, campaign_id, name, description, status, start_date, end_date,
          client_id, client_name, lead_type, campaign_type, cpl, revenue, total_allocation, achieved,
-         pending_allocation, industry, geography, created_at,
+         pending_allocation, industry, geography, created_at, created_by,
          campaign_metrics(
            sponsor_name,
            total_leads_allocated,
@@ -91,8 +143,7 @@ export async function GET(request: NextRequest) {
 
     if (userRoles.includes("client_viewer") && clientViewerId) {
       listQuery = listQuery.eq("client_id", clientViewerId);
-      // Client viewers should only see campaigns created from their own "Create New Campaign" flow.
-      listQuery = listQuery.eq("created_by", user.id);
+      listQuery = listQuery.in("created_by", clientViewerUserIds);
     }
 
     if (qRaw.length > 0) {
@@ -117,6 +168,23 @@ export async function GET(request: NextRequest) {
     if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 });
 
     const rows = (listRows ?? []) as Record<string, unknown>[];
+    const createdByIds = [...new Set(rows.map((r) => r.created_by).filter((id): id is string => typeof id === "string" && id.length > 0))];
+    const creatorNameById: Record<string, string> = {};
+    if (createdByIds.length > 0) {
+      const admin = getAdminClientSafe();
+      const usersClient = admin ?? supabase;
+      let usersQuery = usersClient
+        .from("users")
+        .select("id, full_name, email")
+        .in("id", createdByIds);
+      if (admin && orgId) {
+        usersQuery = usersQuery.eq("organization_id", orgId);
+      }
+      const { data: usersData } = await usersQuery;
+      ((usersData ?? []) as { id: string; full_name: string | null; email: string | null }[]).forEach((u) => {
+        creatorNameById[u.id] = u.full_name || u.email || "Unknown";
+      });
+    }
     const ids = rows.map((r) => r.id as string);
 
     let leadAgg: Record<string, CommandListLeadAgg> = {};
@@ -125,7 +193,9 @@ export async function GET(request: NextRequest) {
     if (ids.length > 0) {
       try {
         [leadAgg, alertAgg, dqOverrideAgg] = await Promise.all([
-          aggregateCommandLeadStatsByCampaign(supabase, orgId, ids),
+          aggregateCommandLeadStatsByCampaign(supabase, orgId, ids, {
+            deliveredOnly: userRoles.includes("client_viewer"),
+          }),
           aggregateUnresolvedAlertsByCampaign(supabase, orgId, ids),
           aggregateDqOverrideAlertCountsByCampaign(supabase, orgId, ids),
         ]);
@@ -163,6 +233,9 @@ export async function GET(request: NextRequest) {
       const overrideCount = dqOverrideAgg[id] ?? 0;
       return {
         ...c,
+        created_by_name:
+          creatorNameById[(c.created_by as string | undefined) ?? ""] ??
+          ((c.created_by as string | undefined) ? "Unknown" : null),
         list_stats: {
           total_leads: L.total,
           qualified_count: L.qualified,
@@ -193,7 +266,7 @@ export async function GET(request: NextRequest) {
     .select(
       `id, campaign_id, name, description, status, start_date, end_date,
        client_id, client_name, lead_type, campaign_type, cpl, revenue, total_allocation, achieved,
-       pending_allocation, industry, geography, created_at,
+       pending_allocation, industry, geography, created_at, created_by,
        campaign_metrics(
          sponsor_name,
          total_leads_allocated,
@@ -214,12 +287,18 @@ export async function GET(request: NextRequest) {
 
   // client_viewer: restrict to their own client's campaigns
   if (userRoles.includes("client_viewer")) {
-    if (!profile?.client_id) {
+    if (!profile?.client_id || !profile?.organization_id) {
+      return NextResponse.json({ campaigns: [], total: 0, limit, nextCursor: null, hasMore: false });
+    }
+    const clientViewerUserIds = await getClientViewerUserIdsForOrg(
+      supabase,
+      profile.organization_id
+    );
+    if (clientViewerUserIds.length === 0) {
       return NextResponse.json({ campaigns: [], total: 0, limit, nextCursor: null, hasMore: false });
     }
     query = query.eq("client_id", profile.client_id);
-    // Client viewers should only see campaigns created from their own "Create New Campaign" flow.
-    query = query.eq("created_by", user.id);
+    query = query.in("created_by", clientViewerUserIds);
   }
 
   // Cursor-based pagination
@@ -233,11 +312,46 @@ export async function GET(request: NextRequest) {
   }
 
   const { data: campaigns, count, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    const msg = error.message ?? "Failed to create campaign";
+    const isDuplicateCampaignId =
+      msg.includes("campaigns_campaign_id_unique") ||
+      msg.toLowerCase().includes("duplicate key value");
+    return NextResponse.json(
+      {
+        error: isDuplicateCampaignId
+          ? "Campaign ID already exists. Please use a different Campaign ID."
+          : msg,
+      },
+      { status: isDuplicateCampaignId ? 409 : 500 }
+    );
+  }
 
   const rows = (campaigns ?? []) as Record<string, unknown>[];
+  const createdByIds = [...new Set(rows.map((r) => r.created_by).filter((id): id is string => typeof id === "string" && id.length > 0))];
+  const creatorNameById: Record<string, string> = {};
+  if (createdByIds.length > 0) {
+    const admin = getAdminClientSafe();
+    const usersClient = admin ?? supabase;
+    let usersQuery = usersClient
+      .from("users")
+      .select("id, full_name, email")
+      .in("id", createdByIds);
+    if (admin && profile?.organization_id) {
+      usersQuery = usersQuery.eq("organization_id", profile.organization_id);
+    }
+    const { data: usersData } = await usersQuery;
+    ((usersData ?? []) as { id: string; full_name: string | null; email: string | null }[]).forEach((u) => {
+      creatorNameById[u.id] = u.full_name || u.email || "Unknown";
+    });
+  }
   const hasMore = rows.length > limit;
-  const items = hasMore ? rows.slice(0, limit) : rows;
+  const items: Record<string, unknown>[] = (hasMore ? rows.slice(0, limit) : rows).map((row) => ({
+    ...row,
+    created_by_name:
+      creatorNameById[(row.created_by as string | undefined) ?? ""] ??
+      ((row.created_by as string | undefined) ? "Unknown" : null),
+  }));
   const last = items[items.length - 1];
   const nextCursor =
     hasMore && last

@@ -15,6 +15,7 @@ import {
   QA_AUDIT_DISQUALIFICATION_OPTIONS,
 } from "@/types/lead.types";
 import type { Lead } from "@/types/lead.types";
+import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 
 type LeadFormProps = {
   form: ReturnType<typeof Form.useForm>[0];
@@ -29,6 +30,7 @@ export function LeadForm({
   lead,
   canEditQaAudit = false,
 }: LeadFormProps) {
+  const supabase = createSupabaseClient();
   const [showMoreCq, setShowMoreCq] = useState(false);
   const [voiceRecordings, setVoiceRecordings] = useState<
     { id: string; name: string; path: string; url: string | null }[]
@@ -131,20 +133,52 @@ export function LeadForm({
     }
     setVoiceUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
       const res = await fetch(`/api/agent/leads/${lead.id}/voice-lock`, {
         method: "POST",
         credentials: "include",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileType: file.type || "application/octet-stream",
+          fileSize: file.size,
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         message.error(json?.error || "Failed to upload recording");
         return;
       }
+
+      const uploadPath = json?.upload?.path as string | undefined;
+      const uploadToken = json?.upload?.token as string | undefined;
+      if (!uploadPath || !uploadToken) {
+        message.error("Upload session could not be created");
+        return;
+      }
+
+      const { error: storageError } = await supabase.storage
+        .from("campaign-files")
+        .uploadToSignedUrl(uploadPath, uploadToken, file, {
+          contentType: file.type || "application/octet-stream",
+          upsert: false,
+        });
+
+      if (storageError) {
+        message.error(storageError.message || "Failed to upload recording");
+        return;
+      }
+
+      const refreshRes = await fetch(`/api/agent/leads/${lead.id}/voice-lock`, {
+        credentials: "include",
+      });
+      const refreshJson = await refreshRes.json().catch(() => ({}));
+      if (!refreshRes.ok) {
+        message.error(refreshJson?.error || "Uploaded, but failed to refresh recordings");
+        return;
+      }
+
       setVoiceRecordings(
-        (json?.recordings ?? []).map((r: any) => ({
+        (refreshJson?.recordings ?? []).map((r: any) => ({
           id: r.id ?? r.path,
           name: r.name,
           path: r.path,

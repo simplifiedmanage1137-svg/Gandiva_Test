@@ -158,6 +158,7 @@ export default function CampaignDetailPage() {
           key={refreshKey}
           campaignId={campaignId}
           initialTab={searchParams.get("tab")}
+          initialDeliveryStatus={searchParams.get("delivery_status")}
         />
       </Card>
 

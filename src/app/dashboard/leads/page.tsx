@@ -252,7 +252,7 @@ export default function DashboardLeadsPage() {
           columns={columns}
           dataSource={filtered}
           loading={loading}
-          pagination={{ pageSize: 20, showSizeChanger: true }}
+          pagination={{ defaultPageSize: 20, showSizeChanger: true }}
           scroll={{ x: 900 }}
         />
       </Card>

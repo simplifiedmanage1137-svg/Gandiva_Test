@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAdminClientSafe, ADMIN_NOT_CONFIGURED_MESSAGE } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,19 @@ export async function PATCH(
     if (!orgId) {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
+    const { data: roleRows } = await supabase
+      .from("user_roles")
+      .select("roles(name)")
+      .eq("user_id", user.id);
+    const roleNames = ((roleRows ?? []) as { roles: { name: string } | null }[]).map((r) =>
+      r.roles?.name?.toLowerCase().trim().replace(/\s+/g, "_")
+    );
+    const useAdminDataClient = roleNames.includes("mis") || roleNames.includes("admin");
+    const admin = useAdminDataClient ? getAdminClientSafe() : null;
+    if (useAdminDataClient && !admin) {
+      return NextResponse.json({ error: ADMIN_NOT_CONFIGURED_MESSAGE }, { status: 503 });
+    }
+    const dataClient = admin ?? supabase;
 
     const { id: campaignId } = await params;
     if (!campaignId) {
@@ -38,7 +52,7 @@ export async function PATCH(
       );
     }
 
-    const { data: campaign } = await supabase
+    const { data: campaign } = await dataClient
       .from("campaigns")
       .select("id")
       .eq("id", campaignId)
@@ -83,6 +97,7 @@ export async function PATCH(
       employee_size,
       see_all_employees,
       industry,
+      channel,
       employee_size_link,
       company_website_link,
       revenue_range,
@@ -121,6 +136,7 @@ export async function PATCH(
       lead_disposition,
       followup_date,
       notes,
+      delivery_status,
     } = body ?? {};
 
     if (!leadRowId) {
@@ -163,6 +179,18 @@ export async function PATCH(
     if (employee_size !== undefined) updates.employee_size = employee_size || null;
     if (see_all_employees !== undefined) updates.see_all_employees = see_all_employees || null;
     if (industry !== undefined) updates.industry = industry || null;
+    if (channel !== undefined) {
+      const raw = typeof channel === "string" ? channel.trim().toLowerCase() : "";
+      if (!raw) {
+        updates.channel = null;
+      } else if (raw === "email") {
+        updates.channel = "Email";
+      } else if (raw === "telemarketing") {
+        updates.channel = "Telemarketing";
+      } else {
+        return NextResponse.json({ error: "Invalid channel. Use Email or Telemarketing" }, { status: 400 });
+      }
+    }
     if (employee_size_link !== undefined) updates.employee_size_link = employee_size_link || null;
     if (company_website_link !== undefined) updates.company_website_link = company_website_link || null;
     if (revenue_range !== undefined) updates.revenue_range = revenue_range || null;
@@ -216,15 +244,19 @@ export async function PATCH(
     if (rectified_reason !== undefined) {
       updates.rectified_reason = rectified_reason != null && String(rectified_reason).trim() ? String(rectified_reason).trim() : null;
     }
+    if (delivery_status !== undefined) {
+      const raw = typeof delivery_status === "string" ? delivery_status.trim().toLowerCase() : "";
+      if (raw === "delivered") {
+        updates.delivery_status = "delivered";
+      } else if (raw === "not_delivered" || raw === "not delivered") {
+        updates.delivery_status = "not_delivered";
+      } else {
+        return NextResponse.json({ error: "Invalid delivery_status" }, { status: 400 });
+      }
+    }
 
-    const { data: roleRows } = await supabase
-      .from("user_roles")
-      .select("roles(name)")
-      .eq("user_id", user.id);
-    const roleNames = ((roleRows ?? []) as { roles: { name: string } | null }[]).map((r) =>
-      r.roles?.name?.toLowerCase().trim().replace(/\s+/g, "_")
-    );
     const canEditQa = roleNames.includes("qa") || roleNames.includes("admin");
+    const canEditDelivery = roleNames.includes("mis") || roleNames.includes("admin");
     if (!canEditQa) {
       delete updates.qa_status;
       delete updates.disqualification_reasons;
@@ -240,6 +272,34 @@ export async function PATCH(
       const u = userProfile as { full_name: string | null; email: string | null } | null;
       updates.qa_name = u?.full_name || u?.email || null;
     }
+    if (delivery_status !== undefined && !canEditDelivery) {
+      return NextResponse.json({ error: "Only MIS/Admin can update delivery status" }, { status: 403 });
+    }
+
+    if (updates.delivery_status !== undefined) {
+      const { data: existingLead, error: existingError } = (await dataClient
+        .from("leads")
+        .select("id, delivery_status")
+        .eq("id", leadRowId)
+        .eq("campaign_id", campaignId)
+        .eq("organization_id", orgId)
+        .maybeSingle()) as {
+          data: { id: string; delivery_status: string | null } | null;
+          error: { message: string } | null;
+        };
+      if (existingError) {
+        return NextResponse.json({ error: existingError.message }, { status: 500 });
+      }
+      if (!existingLead) {
+        return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+      }
+      if (
+        existingLead.delivery_status === updates.delivery_status &&
+        updates.delivery_status === "delivered"
+      ) {
+        return NextResponse.json({ error: "Lead is already marked as delivered" }, { status: 409 });
+      }
+    }
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -248,7 +308,7 @@ export async function PATCH(
       );
     }
 
-    const { data: updated, error: updateError } = await supabase
+    const { data: updated, error: updateError } = await dataClient
       .from("leads")
       .update(updates as never)
       .eq("id", leadRowId)

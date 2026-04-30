@@ -4,28 +4,57 @@ import { getAdminClientSafe, ADMIN_NOT_CONFIGURED_MESSAGE } from "@/lib/supabase
 
 export const dynamic = "force-dynamic";
 
+async function getUserContext() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  }
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("organization_id, client_id")
+    .eq("id", user.id)
+    .single();
+
+  const profileData = profile as { organization_id: string | null; client_id: string | null } | null;
+  const orgId = profileData?.organization_id;
+  const userClientId = profileData?.client_id ?? null;
+  if (!orgId) {
+    return { error: NextResponse.json({ error: "No organization" }, { status: 400 }) };
+  }
+
+  const { data: roleRows } = await supabase
+    .from("user_roles")
+    .select("roles(name)")
+    .eq("user_id", user.id);
+  const roleNames = ((roleRows ?? []) as { roles: { name: string } | null }[])
+    .map((r) => r.roles?.name?.toLowerCase().trim().replace(/\s+/g, "_"))
+    .filter(Boolean) as string[];
+
+  const canViewAllClients =
+    roleNames.includes("sales_manager") ||
+    roleNames.includes("internal_operator") ||
+    roleNames.includes("internal_admin") ||
+    roleNames.includes("admin");
+  const isClientViewer = roleNames.includes("client_viewer");
+
+  if (!canViewAllClients && !isClientViewer) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+
+  return { user, orgId, userClientId, canViewAllClients };
+}
+
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
-      .from("users")
-      .select("organization_id")
-      .eq("id", user.id)
-      .single();
-
-    const orgId = (profile as { organization_id: string | null } | null)?.organization_id;
-    if (!orgId) {
-      return NextResponse.json({ error: "No organization" }, { status: 400 });
-    }
+    const ctx = await getUserContext();
+    if ("error" in ctx) return ctx.error;
+    const { orgId, userClientId, canViewAllClients } = ctx;
 
     const admin = getAdminClientSafe();
     if (!admin) {
@@ -35,11 +64,20 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const withCampaigns = searchParams.get("withCampaigns") === "1";
 
-    const { data: clients, error: clientsError } = await admin
+    let clientsQuery = admin
       .from("clients")
       .select("id, company_name, company_website, industry_type, company_size, year_established, company_address, city, state, country, contact_person, contact_full_name, contact_designation, contact_work_email, contact_mobile, contact_linkedin, created_at")
       .eq("organization_id", orgId)
       .order("created_at", { ascending: false });
+
+    if (!canViewAllClients) {
+      if (!userClientId) {
+        return NextResponse.json({ clients: [] });
+      }
+      clientsQuery = clientsQuery.eq("id", userClientId);
+    }
+
+    const { data: clients, error: clientsError } = await clientsQuery;
 
     if (clientsError) {
       return NextResponse.json({ error: clientsError.message }, { status: 500 });
@@ -106,26 +144,9 @@ function date(val: unknown): string | null {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
-      .from("users")
-      .select("organization_id")
-      .eq("id", user.id)
-      .single();
-
-    const orgId = (profile as { organization_id: string | null } | null)?.organization_id;
-    if (!orgId) {
-      return NextResponse.json({ error: "No organization" }, { status: 400 });
-    }
+    const ctx = await getUserContext();
+    if ("error" in ctx) return ctx.error;
+    const { orgId, user } = ctx;
 
     const body = await request.json();
 

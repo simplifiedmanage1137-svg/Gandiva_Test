@@ -437,7 +437,7 @@ export default function AgentDashboardPage() {
                 dataSource={filteredCampaigns}
                 rowKey="id"
                 pagination={{
-                  pageSize: 10,
+                  defaultPageSize: 10,
                   showSizeChanger: true,
                   showTotal: (t) => `Total ${t} campaigns`,
                 }}

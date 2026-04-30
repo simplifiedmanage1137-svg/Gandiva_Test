@@ -757,7 +757,7 @@ export default function AgentCampaignDetailPage() {
           dataSource={filteredLeads}
           rowKey="id"
           scroll={{ x: 2600 }}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `Total ${t} leads` }}
           locale={{ emptyText: leadSearch || dateRange?.[0] || dateRange?.[1] || leadTaggingFilter ? "No leads match the filter." : "No leads yet. Use 'Add Lead' to create one." }}
           size="middle"
           onRow={(record) => ({
