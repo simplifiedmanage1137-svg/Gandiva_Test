@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { useTLDashboard } from "@/hooks/useTLDashboard";
-import { Skeleton, Tag } from "antd";
+import { Skeleton } from "antd";
 import { useMemo } from "react";
 import {
   TLCampaignPerformanceChart,
@@ -14,15 +14,7 @@ import {
   FundProjectionScreenOutlined,
   TeamOutlined,
   RiseOutlined,
-  RightOutlined,
 } from "@ant-design/icons";
-
-async function fetchLeadTypes(): Promise<{ leadTypes: string[] }> {
-  const res = await fetch("/api/tl/lead-types", { credentials: "include" });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to load lead types");
-  return data;
-}
 
 async function fetchAgents(): Promise<{ agents: { id: string; full_name: string | null; email: string | null }[] }> {
   const res = await fetch("/api/tl/agents", { credentials: "include" });
@@ -38,16 +30,6 @@ async function fetchAgentLeadCounts(): Promise<{ countByAgent: Record<string, nu
   return data;
 }
 
-const LEAD_TYPE_COLORS = [
-  { bg: "#e6f4ff", border: "#91caff", text: "#0958d9", dot: "#1890ff" },
-  { bg: "#f6ffed", border: "#b7eb8f", text: "#389e0d", dot: "#52c41a" },
-  { bg: "#fff7e6", border: "#ffd591", text: "#d46b08", dot: "#fa8c16" },
-  { bg: "#f9f0ff", border: "#d3adf7", text: "#531dab", dot: "#722ed1" },
-  { bg: "#fff0f6", border: "#ffadd2", text: "#c41d7f", dot: "#eb2f96" },
-  { bg: "#e6fffb", border: "#87e8de", text: "#08979c", dot: "#13c2c2" },
-  { bg: "#feffe6", border: "#eaff8f", text: "#7cb305", dot: "#a0d911" },
-];
-
 const cardStyle: React.CSSProperties = {
   background: "#fff",
   borderRadius: 16,
@@ -61,13 +43,6 @@ export default function TLTeamPage() {
   const enabled = Boolean(isInitialized && (hasRole("team_leader") || hasRole("tl")));
 
   const { stats, campaigns } = useTLDashboard(enabled);
-
-  const leadTypesQuery = useQuery({
-    queryKey: ["tl", "lead-types"],
-    queryFn: fetchLeadTypes,
-    enabled,
-    staleTime: 60 * 1000,
-  });
 
   const agentsQuery = useQuery({
     queryKey: ["tl", "agents"],
@@ -86,7 +61,6 @@ export default function TLTeamPage() {
   const statsData = stats.data;
   const campaignsList = campaigns.data?.campaigns ?? [];
   const agentsList = agentsQuery.data?.agents ?? [];
-  const leadTypes = leadTypesQuery.data?.leadTypes ?? [];
 
   const summaryCards = useMemo(() => {
     const s = statsData;
@@ -166,60 +140,49 @@ export default function TLTeamPage() {
         </div>
       )}
 
-      {/* Lead Type Cards */}
+      {/* Lead Type Analytics Table */}
       <div style={{ ...cardStyle, marginBottom: 24 }}>
-        <div style={{ marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Lead Type Analytics</h3>
-          <p style={{ margin: "4px 0 0", color: "#8c8c8c", fontSize: 13 }}>
-            Click a lead type to view detailed performance, agent stats, and trends.
-          </p>
-        </div>
-
-        {leadTypesQuery.isLoading ? (
-          <Skeleton active paragraph={{ rows: 2 }} />
-        ) : leadTypes.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "#aaa", fontSize: 14 }}>
-            No lead types found. Assign lead types to campaigns to see analytics here.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-            {leadTypes.map((lt, i) => {
-              const palette = LEAD_TYPE_COLORS[i % LEAD_TYPE_COLORS.length];
-              return (
-                <div
-                  key={lt}
-                  onClick={() => router.push(`/tl/team/lead-type/${encodeURIComponent(lt)}`)}
-                  style={{
-                    background: palette.bg,
-                    border: `1.5px solid ${palette.border}`,
-                    borderRadius: 12,
-                    padding: "20px 20px 16px",
-                    cursor: "pointer",
-                    transition: "transform 0.15s, box-shadow 0.15s",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.transform = "translateY(-3px)";
-                    (e.currentTarget as HTMLDivElement).style.boxShadow = "0 6px 20px rgba(0,0,0,0.1)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-                    (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ width: 10, height: 10, borderRadius: "50%", background: palette.dot, display: "inline-block" }} />
-                    <RightOutlined style={{ fontSize: 12, color: palette.text, opacity: 0.6 }} />
-                  </div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: palette.text }}>{lt}</div>
-                  <div style={{ fontSize: 12, color: palette.text, opacity: 0.75 }}>View analytics →</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 600 }}>Lead Type Analytics</h3>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #f0f0f0" }}>
+              <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 600, color: "#595959", width: "50%" }}>Lead Type</th>
+              <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 600, color: "#595959" }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              { label: "CDQA", types: ["CDQA"] },
+              { label: "HQL, BANT, WEBINAR", types: ["HQL", "BANT", "WEBINAR"] },
+              { label: "Live Events", types: ["Live Events"] },
+              { label: "AG", types: ["AG"] },
+            ].map((row) => (
+              <tr
+                key={row.label}
+                style={{ borderBottom: "1px solid #f0f0f0" }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#fafafa")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+              >
+                <td style={{ padding: "12px 12px", color: "#1f1f1f" }}>{row.label}</td>
+                <td style={{ padding: "12px 12px" }}>
+                  {row.types.map((lt, idx) => (
+                    <span key={lt}>
+                      {idx > 0 && <span style={{ color: "#d9d9d9", margin: "0 6px" }}>|</span>}
+                      <span
+                        onClick={() => router.push(`/tl/team/lead-type/${encodeURIComponent(lt)}`)}
+                        style={{ color: "#1677ff", cursor: "pointer", fontWeight: 500 }}
+                        onMouseEnter={(e) => ((e.currentTarget as HTMLSpanElement).style.textDecoration = "underline")}
+                        onMouseLeave={(e) => ((e.currentTarget as HTMLSpanElement).style.textDecoration = "none")}
+                      >
+                        {lt}
+                      </span>
+                    </span>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Charts Section */}

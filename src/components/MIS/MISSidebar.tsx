@@ -20,7 +20,7 @@ const misMenuItems = [
   {
     key: "/mis/campaigns",
     icon: <AppstoreOutlined />,
-    label: "Campaign Management",
+    label: "Campaigns",
     href: "/mis/campaigns",
   },
   {
@@ -38,7 +38,7 @@ const misMenuItems = [
   {
     key: "/mis/reports",
     icon: <BarChartOutlined />,
-    label: "Reports & Analytics",
+    label: "Reports",
     href: "/mis/reports",
   },
 ];
@@ -145,7 +145,7 @@ export default function MISSidebar() {
                 </div>
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     lineHeight: 1.1,
                     color: active ? "#0f172a" : "#6b7280",
                     fontWeight: active ? 600 : 500,
